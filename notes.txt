@@ -1,0 +1,46 @@
+users’ onchain behavior and in particular, loyalty patterns. Use publicly available data, like Dune or other datasets, to answer the following key questions. 
+For the sake of simplicity, assume the following:
+The relevant data period is the 6 months
+The relevant networks are Ethereum, Base, Optimism, BSC, Arbitrum, Solana
+Our relevant Competitors are Gas.Zip, Across, and Debridge
+
+
+Solver
+EVM	0xf70da97812cb96acdf810712aa562db8dfa3dbef
+SVM	F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe
+ 
+Chain ChainID Relay-Receiver 	ERC20Router
+Ethereum	1	0xa5f565650890fba1824ee0f21ebbbf660a179934
+Base	8453	0xa5f565650890fba1824ee0f21ebbbf660a179934
+Optimism	10	0xa5f565650890fba1824ee0f21ebbbf660a179934
+BNB	56	0xa5f565650890fba1824ee0f21ebbbf660a179934
+Arbitrum	42161	0xa5f565650890fba1824ee0f21ebbbf660a179934
+
+SEGMENTATION: 
+
+How would you segment our user base? Define 3-4 meaningful user personas based on transaction patterns, volumes, and frequency.
+
+-> New to Relay (First 5 times using Relay) 
+-> Beginner Explorer (only active on 1 or 2 of EVM + tied SVM if applicable)
+-> Advanced Programmatic (Extremely high NONCE >10,000)
+-> Token-Consistent / Strategy Consistent (low variance in day of the week, # of unique tokens, # of source-destination pairs, # total chains touched)
+
+Are there meaningful patterns associated with Users FIRST Relay? 
+For example, to users typically find us by first using a long tail chain (hm, long-tail? need to look at the attached data)
+-> Most common token (probably gas token of chain. if stablecoin probably USDC lol. Do they do cross gas swaps?)
+
+LOYALTY: 
+What is bridge loyalty? Exclusive vs non-exclusive. rate-shopping vs convenience (token overlaps? time of day overlaps? is it churn or opportunity?)
+Segmentation of loyal vs non-loyal. What does clustering show?
+
+
+DELIVERY: 
+Analysis Notebook, File, or Dashboard
+1-page executive summary
+Key Findings
+Methodological notes (inc. simplifying assumptions)
+At least 1 meaningful data visualization
+Actionable Insights
+Proposed Next Steps for Analysis 
+
+
