@@ -10,3 +10,4 @@ wheels/
 .venv
 # original data 
 relay_*.csv
+relay_analysis.db
