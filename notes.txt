@@ -86,17 +86,7 @@ Considering some clusters like
 -> straight-to-business (looking for absolute cheapest EVM<->EVM raw ETH moves if it really is 0.002% fee lol)
 -> cross-chain cross-gas (big niche for explorers) 
 
---------------------------------
-
-Top 10 wallet review: 
-This address is an outlier, seems to be the LiFi Diamond Contract, routes to 
-Relay 1.9M times. Let's separate that from analysis. 
-0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae 
-
-
-SOL address w/ 200,000+ lifetime transfers on SOL. Programmatic. 
-72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8
-zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM 136,000+ lifetime transfers on SOL. 
+-----------------------------------------------
 
 ----------
 looks like they provided 2 years of Jan-June data. 
@@ -114,3 +104,37 @@ $ uv run 99_scrap_sqlite.py
 9   2024-03   476830
 10  2024-02   351377
 11  2024-01    33482
+
+------------------------------------
+Wallets w/ > 10K transactions; Top 3 Source, Top 3 Dest notes. 
+
+Top wallet review: 
+This address is an outlier, seems to be the LiFi Diamond Contract, routes to 
+Relay 1.9M times. Let's separate that from analysis. 
+0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae top source( base, arbitrum, op) top dest abstract/base/arb. 
+Interesting, is Abstract rarely used, so Relay has disproportionate market share? what is the relationship w/ Lifi?
+
+0x4f8c9056bb8a3616693a76922fa35d53c056e5b3 a contract (code not published) on Abstract; has errant funds on other EVMs. 
+exclusively sends from abstract; top 3 dest: base, arbitrum, ethereum.
+
+0xde1e598b81620773454588b85d6b5d4eec32573e a contract on Linea. Seems to be the Linea LiFi-Diamond contract. 
+Linea -> Base, Arb, Abstract (what is with Abstract?? lol).
+
+The Soneium LiFi Diamond contract (also their contract on Unichain, Ink. Implements RelayFacet alongside gaszip, across, and stargate)
+0x864b314d4c5a0399368609581d3e8933a63b9232 (sources: soneium, unichain, ink; desta: base, op, unichain)
+
+0x341e94069f53234fe6dabef707ad424830525715 zksync only (let me guess, the LiFi zkysync contract LOL)
+Yep. exclusively zksync source; top 3 dest (base, arb, op) 
+
+0x896ff3b31ecc105d4f23582c73416484ecc207c6 (src: base/op/eth; dest: arb/abstract/base) 
+ what is with abstract? defillama showing reservoir/tools as #2 protocol by tvl on abstract and top dex lol. 
+
+0xf909c4ae16622898b885b89d7f839e0244851c66 (berachain lifi diamond I bet- yep. confirmed)
+top dests: base, arb, solana (that's interesting will check routing frequencies next).
+
+
+72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8 (on Curve, not a contract)
+SOL address w/ 200,000+ lifetime transfers on SOL. Programmatic. 
+
+zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM 136,000+ lifetime transfers on SOL. 
+
