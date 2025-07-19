@@ -66,6 +66,8 @@ Not in any of the relay docs. But the solidity mentions permit-relay.
 
 https://bscscan.com/tx/0x8b061a083b8badcbcb8e97d65c40a11426b31001ebaa144f668ffd7e379fa5b1
 
+3SzCBYadajZpCvXFV6J5AG6NZKmu4KpxFtsbyi91pyAfaiwb6GFNeT9QNnXF2wU2gzVLautWgfo9VThmVDwDoCDR 
+another like $1M held hot on SOL by relay address lol. 
 
 ------------------------
 
@@ -116,6 +118,9 @@ Interesting, is Abstract rarely used, so Relay has disproportionate market share
 
 0x4f8c9056bb8a3616693a76922fa35d53c056e5b3 a contract (code not published) on Abstract; has errant funds on other EVMs. 
 exclusively sends from abstract; top 3 dest: base, arbitrum, ethereum.
+Deployed by 0x11F1022cA6AdEF6400e5677528a80d49a069C00c who is associated with both LiFi + Reservoir Relay Receiver
+https://basescan.org/address/0x11F1022cA6AdEF6400e5677528a80d49a069C00c
+
 
 0xde1e598b81620773454588b85d6b5d4eec32573e a contract on Linea. Seems to be the Linea LiFi-Diamond contract. 
 Linea -> Base, Arb, Abstract (what is with Abstract?? lol).
@@ -135,6 +140,25 @@ top dests: base, arb, solana (that's interesting will check routing frequencies 
 
 72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8 (on Curve, not a contract)
 SOL address w/ 200,000+ lifetime transfers on SOL. Programmatic. 
+Could this be a non-documented LiFi Solana router? Ah, looks like thaolunar = Relay? 
+looks to exclusively send to Arbitrum, no other chain. Funded by thaolunar.sol
 
 zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM 136,000+ lifetime transfers on SOL. 
+sends to polygon, arb, and base. 
 
+5trW3ZogRMxW9tX4pNCMQi1APzx8G6UTcyneWEX2Rk4Q
+200k+ transfers, solana address, also exclusively sends to arbitrum. Funded by thaolunar.sol 
+
+9s3Kyeg2NHeM2xhSqMyp944f8VS2oBYdwvK98AAnW35w
+200k+ transfers, solana address, exclusively sends to arbitrum. Funded by thaolunar.sol 
+
+thaolunar.sol = 7LzdjRM1rYcpF5rny4X4SBCTYf3Fsr2LXLg1SPJ7n663
+Funded by Relay Solver. 
+
+Okay, will likely need to segment off the above. 
+
+-----------------------------
+Burn wallet as a user? (n_tx)
+0x0000000000000000000000000000000000000000,3656
+
+------------------------------
