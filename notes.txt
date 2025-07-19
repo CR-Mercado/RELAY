@@ -9,12 +9,15 @@ Solver
 EVM	0xf70da97812cb96acdf810712aa562db8dfa3dbef
 SVM	F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe
  
-Chain ChainID Relay-Receiver 	ERC20Router
+Chain ChainID Relay-Receiver 	
 Ethereum	1	0xa5f565650890fba1824ee0f21ebbbf660a179934
 Base	8453	0xa5f565650890fba1824ee0f21ebbbf660a179934
 Optimism	10	0xa5f565650890fba1824ee0f21ebbbf660a179934
 BNB	56	0xa5f565650890fba1824ee0f21ebbbf660a179934
 Arbitrum	42161	0xa5f565650890fba1824ee0f21ebbbf660a179934
+
+ERC20Router: 0xf5042e6ffac5a625d4e7848e0b01373d8eb9e222
+
 
 SEGMENTATION: 
 
@@ -44,3 +47,70 @@ Actionable Insights
 Proposed Next Steps for Analysis 
 
 
+-----------------------------------------------------------------
+
+# Data Exploration Notes
+Scanned first 5 rows of each file, schemas all match.
+Exploring- tx hash 0xd2804723cf789b4a5cc19a8a66bf5fab481a705b4a17ef2d36f2d999f4659c1f
+is in the relay april data as crosschain swap base -> bsc 19.825 usdc -> 19.48 usdt; 
+but base scan labels it a Metamask Bridge (LiFi adapter). Looks like user sends 20 USDC; 
+but then Metamask takes their 0.175 (0.875%) cut; and then LiFi forwards the 19.825. 
+(1.7% is higher than expected relay cut 19.825 -> 19.48)
+
+Relay Solver address is the final recipient on Base (from LiFi)  
+https://basescan.org/tx/0xd2804723cf789b4a5cc19a8a66bf5fab481a705b4a17ef2d36f2d999f4659c1f
+
+Interesting, looks like the Solver is an EOA (originates the bsc tx). $11M held hot across major EVMs. Not sure I'd recommend this architecture choice.
+Hm, what is this address? 0xeeeeee9eC4769A09a76A83C7bC42b185872860eE multicall permit? is this a relay specific contract?   
+Not in any of the relay docs. But the solidity mentions permit-relay. 
+
+https://bscscan.com/tx/0x8b061a083b8badcbcb8e97d65c40a11426b31001ebaa144f668ffd7e379fa5b1
+
+
+------------------------
+
+IS_CALL = TRUE (is this just a forwardWithData binary?)
+https://etherscan.io/tx/0xd060da87999daee8b64b2f432e3cbe5013ad790fee9a0365b781da91797e12b9
+Oh? IS_CALL might be a function call on other side (here, OP buys an NFT SeaDropMint) 
+https://optimistic.etherscan.io/tx/0x511401481a873e8fe7fb6e302a16b50fdd900437a3a4f11e236f4e02f07e46c9#eventlog
+
+
+IS_CALL = FALSE (no, this simple bridge from ETH is also forwardWithData but IS_CALL is false)
+https://etherscan.io/tx/0x1ebdacd85df61a792439f214eaf08267ee8abbf458e97df0d00d17bc429ca3b4
+(weird, ETH on ETH->ARB took only 0.002% essentially free EVM->L2 raw transfers?? - will check this)
+
+-------------------------
+Considering some clusters like 
+-> complex tx (IS_CALL = TRUE)
+-> Niche Chain User (ink, unichain, abstract zksync. Some chains are dying check those usages later)
+-> straight-to-business (looking for absolute cheapest EVM<->EVM raw ETH moves if it really is 0.002% fee lol)
+-> cross-chain cross-gas (big niche for explorers) 
+
+--------------------------------
+
+Top 10 wallet review: 
+This address is an outlier, seems to be the LiFi Diamond Contract, routes to 
+Relay 1.9M times. Let's separate that from analysis. 
+0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae 
+
+
+SOL address w/ 200,000+ lifetime transfers on SOL. Programmatic. 
+72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8
+zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM 136,000+ lifetime transfers on SOL. 
+
+----------
+looks like they provided 2 years of Jan-June data. 
+$ uv run 99_scrap_sqlite.py
+     month_     n_tx
+0   2025-06  5035494
+1   2025-05  4142101
+2   2025-04  3763290
+3   2025-03  2615736
+4   2025-02  2724968
+5   2025-01  1821533
+6   2024-06  1001274
+7   2024-05   765063
+8   2024-04   789316
+9   2024-03   476830
+10  2024-02   351377
+11  2024-01    33482
