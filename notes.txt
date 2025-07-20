@@ -288,3 +288,48 @@ Higher absolute weights = more important for that component
    - 0.105 × call_count_log
    - 0.079 × total_send_usd_log
    📝 Interpretation: Higher PC5 = More unique_days, cross_chain_swaps_log + Less currency_sends, distinct_routes
+
+----------------------------------------------------
+> Are there meaningful patterns associated with Users FIRST Relay? 
+
+Not really, the expected EVM alt L1s, L2s, + Solana drive the most first source activity. 
+It is interesting to see avg amounts 
+
+📈 Top 10 First Source Chains:
+first_source_chain  wallet_count  percentage  avg_amount
+              base        751929       21.31  115.191111
+          arbitrum        626791       17.77  157.410641
+          optimism        406282       11.52   41.309284
+            solana        359998       10.20  238.205612
+          ethereum        235881        6.69  463.549129
+              zora        153580        4.35   11.115630
+               bsc        124290        3.52  100.281091
+          appchain        109220        3.10   37.828540
+           eclipse        106105        3.01  165.563246
+            zksync         94798        2.69  157.582966
+
+📈 Top 10 First Destination Chains:
+first_dest_chain  wallet_count  percentage  avg_amount
+            base        767480       21.75  104.523930
+        abstract        425324       12.06   78.365859
+        arbitrum        421742       11.95  146.346133
+        ethereum        409048       11.59  375.170879
+          solana        244954        6.94  421.024963
+        optimism        140070        3.97   54.327131
+         eclipse        136154        3.86  113.230505
+         soneium        104646        2.97   12.379879
+        appchain        102572        2.91   30.868380
+         polygon         79844        2.26   65.107285
+
+📈 Top 10 First Route Pairs (Source → Destination):
+first_source_chain first_dest_chain  wallet_count  percentage  avg_amount
+              base         abstract        154067        4.37       48.68
+            solana             base        134230        3.80      132.89
+              zora             base        114215        3.24        7.32
+          arbitrum         abstract        102968        2.92       31.32
+          arbitrum         ethereum         94004        2.66      290.85
+          arbitrum             base         93269        2.64       74.38
+              base         ethereum         88702        2.51      471.02
+          optimism             base         87439        2.48       24.29
+          appchain             base         73640        2.09       36.74
+          arbitrum           solana         72303        2.05      654.22
