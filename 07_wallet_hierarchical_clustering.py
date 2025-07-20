@@ -93,6 +93,57 @@ def perform_pca_analysis(X_scaled, n_components=None):
     
     return pca, X_pca
 
+def analyze_pca_components(pca, clustering_features):
+    """
+    Analyze and display what each PCA component represents in terms of original features.
+    """
+    
+    print(f"\n🔍 PCA COMPONENT FORMULATIONS")
+    print("=" * 60)
+    print("Each PC is a weighted combination of original features:")
+    print("Higher absolute weights = more important for that component\n")
+    
+    # Create loadings dataframe
+    loadings_df = pd.DataFrame(
+        pca.components_.T,
+        columns=[f'PC{i+1}' for i in range(pca.n_components_)],
+        index=clustering_features
+    )
+    
+    # Print formulations for each component
+    for i in range(pca.n_components_):
+        pc_name = f'PC{i+1}'
+        print(f"🎯 {pc_name} ({pca.explained_variance_ratio_[i]*100:.1f}% of variance):")
+        
+        # Get feature loadings for this component, sorted by absolute value
+        component_loadings = loadings_df[pc_name].sort_values(key=abs, ascending=False)
+        
+        # Show top contributing features
+        for feature, loading in component_loadings.items():
+            direction = "+" if loading >= 0 else "-"
+            print(f"   {direction} {abs(loading):.3f} × {feature}")
+        
+        # Interpret the component
+        top_positive = component_loadings[component_loadings > 0].head(2)
+        top_negative = component_loadings[component_loadings < 0].head(2)
+        
+        print(f"   📝 Interpretation: Higher {pc_name} = ", end="")
+        if len(top_positive) > 0:
+            print(f"More {', '.join(top_positive.index)}", end="")
+        if len(top_negative) > 0:
+            if len(top_positive) > 0:
+                print(f" + Less {', '.join(top_negative.index)}", end="")
+            else:
+                print(f"Less {', '.join(top_negative.index)}", end="")
+        print("\n")
+    
+    # Save detailed loadings
+    loadings_df_rounded = loadings_df.round(3)
+    loadings_df_rounded.to_csv("pca_component_loadings.csv")
+    print(f"💾 Detailed PCA loadings saved to: pca_component_loadings.csv")
+    
+    return loadings_df
+
 def perform_kmeans_clustering(X_pca, n_clusters_range=(2, 8)):
     """
     Perform k-means clustering on PCA components and find optimal cluster count.
@@ -172,14 +223,14 @@ def create_pca_visualization(X_pca, cluster_labels, clustering_features, output_
         colors = px.colors.qualitative.Set1[:len(unique_clusters)]
         
         for i, (_, row) in enumerate(centroid_df.iterrows()):
-            # Add cluster centroid as large sphere
+            # Add cluster centroid as sphere
             fig.add_trace(go.Scatter3d(
                 x=[row['PC1_mean']],
                 y=[row['PC2_mean']],
                 z=[row['PC3_mean']],
                 mode='markers',
                 marker=dict(
-                    size=20 + row['count']/1000,  # Size based on cluster size
+                    size=15,  # Fixed reasonable size
                     color=colors[i],
                     opacity=0.8,
                     line=dict(width=2, color='black')
@@ -208,13 +259,13 @@ def create_pca_visualization(X_pca, cluster_labels, clustering_features, output_
         colors = px.colors.qualitative.Set1[:len(unique_clusters)]
         
         for i, (_, row) in enumerate(centroid_df.iterrows()):
-            # Add cluster centroid as large circle
+            # Add cluster centroid as circle
             fig.add_trace(go.Scatter(
                 x=[row['PC1_mean']],
                 y=[row['PC2_mean']], 
                 mode='markers',
                 marker=dict(
-                    size=20 + row['count']/500,  # Size based on cluster size
+                    size=12,  # Fixed reasonable size
                     color=colors[i],
                     opacity=0.8,
                     line=dict(width=2, color='black')
@@ -339,6 +390,9 @@ if __name__ == "__main__":
         # Perform PCA analysis
         pca, X_pca = perform_pca_analysis(X_scaled)
         
+        # Analyze PCA component formulations
+        loadings_df = analyze_pca_components(pca, clustering_features)
+        
         # Perform k-means clustering on PCA components
         kmeans, cluster_labels, inertias = perform_kmeans_clustering(X_pca)
         
@@ -355,6 +409,7 @@ if __name__ == "__main__":
         print("=" * 60)
         print(f"✅ PCA + K-means clustering completed")
         print(f"📊 PCA visualization: pca_clusters.html")
+        print(f"🔍 PCA component loadings: pca_component_loadings.csv")
         print(f"📈 Cluster profiles: cluster_profiles_detailed.csv")
         print(f"🔍 Business comparison: business_vs_algorithmic_clusters.csv")
         print(f"\n💡 Next steps:")
