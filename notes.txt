@@ -216,6 +216,4 @@ The core userbase (7 unique days, so roughly use 1/month) with sends in the $100
 The top 1% is likely highly programmatic - I'd segment experimentation on these addresses to see if 
 bid speeds, differentiate fees, etc. can affect their behavior quickly (high feedback loop on experimentation and enough "at bats" to be signal with lower risks)
 
-
-
 --------------------------------------
