@@ -5,7 +5,6 @@ from pathlib import Path
 def get_top_wallets(db_name="relay_analysis.db", limit=1000, export_csv=True):
     """
     Query top wallets by transaction count from Relay SQLite database.
-    Similar to R's dbGetQuery() for wallet segmentation analysis.
     """
     
     # Check if database exists

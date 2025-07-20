@@ -183,3 +183,18 @@ SELECT * FROM exclusions_
 
 --------------------------------------------------------
 
+kind of approaching this from two angles 
+
+there is the general like high frequency/low frequency users. 
+then there is the many chains vs few chains 
+then there is whales/shrimp etc (volume) 
+
+and there is also the practical problem of EVM sharing addresses but SVM is isolated. 
+
+I don't want the signal to be that SVM is rare, thats to be expected. And of course 
+these are all collinear by design. 
+
+But I want to have a specific reason to bundle stablecoin usage vs gas vs Calls(NFT?)/cross-swap etc. 
+
+Ultimately- persona is a behavior (clustering effects not causes). 
+Let's see what kind of hierarchical clustering patterns we notice.
