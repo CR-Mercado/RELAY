@@ -149,6 +149,23 @@ def create_relay_database(db_name="relay_analysis.db"):
             print("❌ No data was successfully loaded")
             return
         
+        # Filter data to 2025+ only (drop rows before Jan 1, 2025)
+        print(f"\n🗑️  Filtering data to 2025+ only...")
+        
+        # Count rows before filtering
+        cursor = conn.execute("SELECT COUNT(*) FROM relay_transactions")
+        rows_before = cursor.fetchone()[0]
+        
+        # Delete rows before 2025-01-01
+        conn.execute("DELETE FROM relay_transactions WHERE created_at < '2025-01-01'")
+        
+        # Count rows after filtering
+        cursor = conn.execute("SELECT COUNT(*) FROM relay_transactions")
+        rows_after = cursor.fetchone()[0]
+        
+        rows_deleted = rows_before - rows_after
+        print(f"   ✅ Deleted {rows_deleted:,} pre-2025 rows ({rows_after:,} rows remaining)")
+        
         # Create indexes for analysis performance
         print(f"\n🔧 Creating indexes for faster queries...")
         

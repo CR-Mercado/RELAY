@@ -160,5 +160,26 @@ Okay, will likely need to segment off the above.
 -----------------------------
 Burn wallet as a user? (n_tx)
 0x0000000000000000000000000000000000000000,3656
-
+also 0x000 dead 
+probably more but 10k tx feels like a decent cutoff for manual checks/segments (separate analysis warranted with relevant context on relationships)
 ------------------------------
+
+WITH exclusions_ AS (
+    SELECT '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae' as wallet, 'LiFi-Diamond' as reasoning
+    UNION ALL SELECT '0x4f8c9056bb8a3616693a76922fa35d53c056e5b3', 'LiFi-Diamond'
+    UNION ALL SELECT '0xde1e598b81620773454588b85d6b5d4eec32573e', 'LiFi-Diamond'
+    UNION ALL SELECT '0x864b314d4c5a0399368609581d3e8933a63b9232', 'LiFi-Diamond'
+    UNION ALL SELECT '0x341e94069f53234fe6dabef707ad424830525715', 'LiFi-Diamond'
+    UNION ALL SELECT '0x896ff3b31ecc105d4f23582c73416484ecc207c6', 'LiFi-Diamond'
+    UNION ALL SELECT '0xf909c4ae16622898b885b89d7f839e0244851c66', 'LiFi-Diamond'
+    UNION ALL SELECT '72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8', 'thaolunar.sol'
+    UNION ALL SELECT 'zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM', 'thaolunar.sol'
+    UNION ALL SELECT '5trW3ZogRMxW9tX4pNCMQi1APzx8G6UTcyneWEX2Rk4Q', 'thaolunar.sol'
+    UNION ALL SELECT '9s3Kyeg2NHeM2xhSqMyp944f8VS2oBYdwvK98AAnW35w', 'thaolunar.sol'
+    UNION ALL SELECT '0x0000000000000000000000000000000000000000', 'burn-address' --- I wonder if these are mint calls? too niche for this analysis rn but curious long term. 
+    UNION ALL SELECT '0x000000000000000000000000000000000000dead', 'burn-address'
+)
+SELECT * FROM exclusions_
+
+--------------------------------------------------------
+
