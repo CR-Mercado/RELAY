@@ -217,3 +217,7 @@ The top 1% is likely highly programmatic - I'd segment experimentation on these 
 bid speeds, differentiate fees, etc. can affect their behavior quickly (high feedback loop on experimentation and enough "at bats" to be signal with lower risks)
 
 --------------------------------------
+
+well, in my mind hierarchical clustering with a dendrogram sounded good but actually making it - kind of questionable.
+We have a rough clustering mindset from the distribution review, maybe PCA is a better choice for 
+rough segmentation. 

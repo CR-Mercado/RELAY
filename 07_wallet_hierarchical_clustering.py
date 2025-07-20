@@ -1,9 +1,11 @@
 import sqlite3
 import pandas as pd
 import numpy as np
-import plotly.figure_factory as ff
-from scipy.cluster.hierarchy import linkage, fcluster
-
+import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 def load_wallet_features(db_name="relay_analysis.db"):
     """
@@ -23,10 +25,9 @@ def load_wallet_features(db_name="relay_analysis.db"):
     finally:
         conn.close()
 
-def prepare_clustering_features(df, sample_size=1000):
+def prepare_clustering_features(df):
     """
     Prepare features for clustering with log transformation and scaling.
-    Sample for dendrogram visualization to avoid memory issues.
     """
     
     # Features for clustering (removed redundant features to avoid multicollinearity)
@@ -60,145 +61,250 @@ def prepare_clustering_features(df, sample_size=1000):
     # Handle any remaining NaN values
     X = X.fillna(0)
     
-    # Sample for dendrogram (too many points make it unreadable)
-    if len(X) > sample_size:
-        print(f"📊 Sampling {sample_size:,} wallets for dendrogram visualization...")
-        
-        # Stratified sampling based on volume to ensure representation of all user types
-        volume_col = 'total_send_usd'
-        
-        # Define volume-based strata
-        p90 = df[volume_col].quantile(0.90)
-        p99 = df[volume_col].quantile(0.99)
-        
-        high_volume = df[df[volume_col] >= p99].index  # Top 1%
-        mid_volume = df[(df[volume_col] >= p90) & (df[volume_col] < p99)].index  # 90-99%
-        low_volume = df[df[volume_col] < p90].index  # Bottom 90%
-        
-        # Sample proportionally from each stratum
-        n_high = min(int(sample_size * 0.1), len(high_volume))  # 10% of sample
-        n_mid = min(int(sample_size * 0.2), len(mid_volume))   # 20% of sample  
-        n_low = sample_size - n_high - n_mid                   # Remaining 70%
-        
-        sample_idx = []
-        if n_high > 0:
-            sample_idx.extend(np.random.choice(high_volume, n_high, replace=False))
-        if n_mid > 0:
-            sample_idx.extend(np.random.choice(mid_volume, n_mid, replace=False))
-        if n_low > 0 and len(low_volume) > 0:
-            sample_idx.extend(np.random.choice(low_volume, min(n_low, len(low_volume)), replace=False))
-        
-        X_sample = X.iloc[sample_idx].copy()
-        sample_wallets = df.iloc[sample_idx]['wallet'].values
-        
-        print(f"   📈 Stratified sample: {n_high} high-volume, {n_mid} mid-volume, {len(sample_idx)-n_high-n_mid} low-volume")
-    else:
-        X_sample = X.copy()
-        sample_wallets = df['wallet'].values
-    
-    # Simple standardization (z-score normalization)
+    # Standardize features
     print("📏 Standardizing features...")
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
     
-    # Calculate means and standard deviations
-    means = X.mean()
-    stds = X.std()
-    
-    # Standardize (subtract mean, divide by std)
-    X_scaled = (X - means) / stds
-    X_sample_scaled = (X_sample - means) / stds
-    
-    # Fill any NaN values (from zero std) with 0
-    X_scaled = X_scaled.fillna(0)
-    X_sample_scaled = X_sample_scaled.fillna(0)
-    
-    print(f"✅ Features prepared: {X_scaled.shape[0]:,} total wallets, {X_sample_scaled.shape[0]:,} in sample")
+    print(f"✅ Features prepared: {X_scaled.shape[0]:,} wallets, {X_scaled.shape[1]} features")
     print(f"📋 Features used: {clustering_features}")
     
-    return X_scaled.values, X_sample_scaled.values, sample_wallets, clustering_features, df
+    return X_scaled, clustering_features, X.index
 
-def perform_hierarchical_clustering(X_sample_scaled, method='ward'):
+def perform_pca_analysis(X_scaled, n_components=None):
     """
-    Perform hierarchical clustering and return linkage matrix.
+    Perform PCA analysis to reduce dimensionality and understand feature importance.
     """
     
-    print(f"🌳 Performing hierarchical clustering with {method} linkage...")
+    if n_components is None:
+        n_components = min(X_scaled.shape[1], 5)  # Max 5 components or number of features
     
-    # Calculate linkage matrix
-    linkage_matrix = linkage(X_sample_scaled, method=method)
+    print(f"🔍 Performing PCA with {n_components} components...")
     
-    print(f"✅ Clustering completed")
+    pca = PCA(n_components=n_components)
+    X_pca = pca.fit_transform(X_scaled)
     
-    return linkage_matrix
+    # Print explained variance
+    print(f"\n📊 PCA Explained Variance:")
+    cumulative_variance = 0
+    for i, var in enumerate(pca.explained_variance_ratio_):
+        cumulative_variance += var
+        print(f"   PC{i+1}: {var:.3f} ({var*100:.1f}%) - Cumulative: {cumulative_variance:.3f} ({cumulative_variance*100:.1f}%)")
+    
+    return pca, X_pca
 
-def create_dendrogram_plotly(X_sample_scaled, sample_wallets, clustering_features, output_file="dendrogram.html"):
+def perform_kmeans_clustering(X_pca, n_clusters_range=(2, 8)):
     """
-    Create an interactive dendrogram using plotly.
+    Perform k-means clustering on PCA components and find optimal cluster count.
     """
     
-    print("🎨 Creating dendrogram visualization...")
+    print(f"\n🎯 Finding optimal number of clusters...")
     
-    # Create dendrogram using plotly (it will compute linkage internally)
-    fig = ff.create_dendrogram(
-        X_sample_scaled,
-        orientation='bottom',
-        labels=[f"W{i}" for i in range(len(sample_wallets))]
-    )
+    inertias = []
+    cluster_range = range(n_clusters_range[0], n_clusters_range[1] + 1)
+    
+    for k in cluster_range:
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        kmeans.fit(X_pca)
+        inertias.append(kmeans.inertia_)
+        print(f"   k={k}: inertia={kmeans.inertia_:.2f}")
+    
+    # Use elbow method suggestion (can be overridden)
+    # For now, default to 3 clusters but show the inertias for user decision
+    optimal_k = 3
+    print(f"\n🔢 Using k={optimal_k} clusters (review inertias above to adjust)")
+    
+    # Final clustering with optimal k
+    kmeans_final = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    cluster_labels = kmeans_final.fit_predict(X_pca)
+    
+    print(f"✅ K-means clustering completed")
+    
+    return kmeans_final, cluster_labels, inertias
+
+def create_pca_visualization(X_pca, cluster_labels, clustering_features, output_file="pca_clusters.html"):
+    """
+    Create PCA visualization showing cluster centroids as spheres (much cleaner than thousands of points).
+    """
+    
+    print("🎨 Creating PCA cluster centroid visualization...")
+    
+    # Create DataFrame with all points
+    plot_df = pd.DataFrame({
+        'PC1': X_pca[:, 0],
+        'PC2': X_pca[:, 1],
+        'Cluster': cluster_labels
+    })
+    
+    if X_pca.shape[1] >= 3:
+        plot_df['PC3'] = X_pca[:, 2]
+    
+    # Calculate cluster centroids and statistics
+    cluster_stats = []
+    unique_clusters = sorted(plot_df['Cluster'].unique())
+    
+    for cluster_id in unique_clusters:
+        cluster_data = plot_df[plot_df['Cluster'] == cluster_id]
+        
+        stats = {
+            'Cluster': f'Cluster {cluster_id}',
+            'PC1_mean': cluster_data['PC1'].mean(),
+            'PC2_mean': cluster_data['PC2'].mean(),
+            'PC1_std': cluster_data['PC1'].std(),
+            'PC2_std': cluster_data['PC2'].std(),
+            'count': len(cluster_data),
+            'percentage': len(cluster_data) / len(plot_df) * 100
+        }
+        
+        if X_pca.shape[1] >= 3:
+            stats['PC3_mean'] = cluster_data['PC3'].mean()
+            stats['PC3_std'] = cluster_data['PC3'].std()
+        
+        cluster_stats.append(stats)
+    
+    centroid_df = pd.DataFrame(cluster_stats)
+    
+    # Create visualization
+    if X_pca.shape[1] >= 3 and 'PC3_mean' in centroid_df.columns:
+        # 3D scatter plot with centroids as large spheres
+        fig = go.Figure()
+        
+        colors = px.colors.qualitative.Set1[:len(unique_clusters)]
+        
+        for i, (_, row) in enumerate(centroid_df.iterrows()):
+            # Add cluster centroid as large sphere
+            fig.add_trace(go.Scatter3d(
+                x=[row['PC1_mean']],
+                y=[row['PC2_mean']],
+                z=[row['PC3_mean']],
+                mode='markers',
+                marker=dict(
+                    size=20 + row['count']/1000,  # Size based on cluster size
+                    color=colors[i],
+                    opacity=0.8,
+                    line=dict(width=2, color='black')
+                ),
+                name=f"{row['Cluster']} ({row['count']:,} wallets, {row['percentage']:.1f}%)",
+                hovertemplate=f"<b>{row['Cluster']}</b><br>" +
+                             f"PC1: {row['PC1_mean']:.2f} ± {row['PC1_std']:.2f}<br>" +
+                             f"PC2: {row['PC2_mean']:.2f} ± {row['PC2_std']:.2f}<br>" +
+                             f"PC3: {row['PC3_mean']:.2f} ± {row['PC3_std']:.2f}<br>" +
+                             f"Count: {row['count']:,} wallets ({row['percentage']:.1f}%)<extra></extra>"
+            ))
+        
+        fig.update_layout(
+            title=f"PCA Cluster Centroids (3D)<br><sub>Features: {', '.join(clustering_features)}</sub>",
+            scene=dict(
+                xaxis_title="PC1",
+                yaxis_title="PC2", 
+                zaxis_title="PC3"
+            )
+        )
+        
+    else:
+        # 2D scatter plot with centroids as large circles
+        fig = go.Figure()
+        
+        colors = px.colors.qualitative.Set1[:len(unique_clusters)]
+        
+        for i, (_, row) in enumerate(centroid_df.iterrows()):
+            # Add cluster centroid as large circle
+            fig.add_trace(go.Scatter(
+                x=[row['PC1_mean']],
+                y=[row['PC2_mean']], 
+                mode='markers',
+                marker=dict(
+                    size=20 + row['count']/500,  # Size based on cluster size
+                    color=colors[i],
+                    opacity=0.8,
+                    line=dict(width=2, color='black')
+                ),
+                name=f"{row['Cluster']} ({row['count']:,} wallets, {row['percentage']:.1f}%)",
+                hovertemplate=f"<b>{row['Cluster']}</b><br>" +
+                             f"PC1: {row['PC1_mean']:.2f} ± {row['PC1_std']:.2f}<br>" +
+                             f"PC2: {row['PC2_mean']:.2f} ± {row['PC2_std']:.2f}<br>" +
+                             f"Count: {row['count']:,} wallets ({row['percentage']:.1f}%)<extra></extra>"
+            ))
+            
+            # Add confidence ellipse (1 standard deviation)
+            theta = np.linspace(0, 2*np.pi, 100)
+            ellipse_x = row['PC1_mean'] + row['PC1_std'] * np.cos(theta)
+            ellipse_y = row['PC2_mean'] + row['PC2_std'] * np.sin(theta)
+            
+            fig.add_trace(go.Scatter(
+                x=ellipse_x,
+                y=ellipse_y,
+                mode='lines',
+                line=dict(color=colors[i], width=1, dash='dash'),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+        
+        fig.update_layout(
+            title=f"PCA Cluster Centroids (2D)<br><sub>Features: {', '.join(clustering_features)}</sub>",
+            xaxis_title="PC1",
+            yaxis_title="PC2"
+        )
     
     fig.update_layout(
-        title={
-            'text': f"Wallet Hierarchical Clustering Dendrogram<br><sub>Features: {', '.join(clustering_features)}</sub>",
-            'x': 0.5,
-            'xanchor': 'center'
-        },
-        xaxis_title="Wallets (Sample)",
-        yaxis_title="Distance",
-        width=1200,
-        height=600,
-        font=dict(size=12)
+        width=1000,
+        height=700,
+        font=dict(size=12),
+        hovermode='closest'
     )
     
     # Save HTML file
     fig.write_html(output_file)
-    print(f"✅ Dendrogram saved to: {output_file}")
+    print(f"✅ PCA centroid visualization saved to: {output_file}")
+    print(f"📊 Showing {len(unique_clusters)} cluster centroids instead of {len(plot_df):,} individual points")
     
     return fig
 
-def analyze_clusters(X_scaled, linkage_matrix, df, n_clusters=3):
+def analyze_clusters(df, cluster_labels, clustering_features):
     """
-    Analyze cluster characteristics for different cluster counts.
+    Analyze cluster characteristics for all wallets.
     """
     
     print(f"\n📊 CLUSTER ANALYSIS")
     print("=" * 60)
     
-    # Get cluster assignments for different numbers of clusters
-    for n in [2, 3, 4, 5]:
-        clusters = fcluster(linkage_matrix, n, criterion='maxclust')
-        
-        # For full dataset, assign clusters based on the sample clustering
-        # This is a simplification - ideally we'd cluster the full dataset
-        print(f"\n🔢 {n} Clusters:")
-        
-        cluster_counts = pd.Series(clusters).value_counts().sort_index()
-        for cluster_id, count in cluster_counts.items():
-            percentage = count / len(clusters) * 100
-            print(f"   Cluster {cluster_id}: {count:,} wallets ({percentage:.1f}%)")
+    # Add cluster labels to dataframe
+    df_analysis = df.copy()
+    df_analysis['cluster'] = cluster_labels
+    
+    # Cluster sizes
+    cluster_counts = df_analysis['cluster'].value_counts().sort_index()
+    print(f"\n🔢 Cluster Sizes:")
+    for cluster_id, count in cluster_counts.items():
+        percentage = count / len(df_analysis) * 100
+        print(f"   Cluster {cluster_id}: {count:,} wallets ({percentage:.1f}%)")
+    
+    # Analyze cluster characteristics
+    numeric_features = ['origin_chains', 'dest_chains', 'currency_sends', 'call_count', 'distinct_routes', 
+                       'cross_chain_swaps', 'bridges', 'unique_days', 'total_send_usd']
+    
+    cluster_profiles = df_analysis.groupby('cluster')[numeric_features].agg(['mean', 'median']).round(2)
+    
+    print(f"\n📈 Cluster Profiles:")
+    print(cluster_profiles)
+    
+    # Save detailed analysis
+    cluster_profiles.to_csv("cluster_profiles_detailed.csv")
+    print(f"\n💾 Detailed cluster analysis saved to: cluster_profiles_detailed.csv")
+    
+    return df_analysis, cluster_profiles
 
-def create_cluster_profiles(df, n_clusters=3):
+def create_business_segments(df_analysis):
     """
-    Create business-interpretable cluster profiles using percentile cutoffs.
-    This gives us interpretable segments regardless of the clustering algorithm.
+    Create business-interpretable segments and compare with algorithmic clusters.
     """
     
-    print(f"\n💼 BUSINESS CLUSTER PROFILES")
+    print(f"\n💼 BUSINESS SEGMENTS vs ALGORITHMIC CLUSTERS")
     print("=" * 60)
     
-    # Define segments based on volume (P90/P99 cutoffs from summary stats)
-    df_analysis = df.copy()
-    
     # Volume-based segmentation (from your business intuition)
-    p90_volume = df_analysis['total_send_usd'].quantile(0.90)  # ~$343
-    p99_volume = df_analysis['total_send_usd'].quantile(0.99)  # ~$6009
+    p90_volume = df_analysis['total_send_usd'].quantile(0.90)
+    p99_volume = df_analysis['total_send_usd'].quantile(0.99)
     
     def assign_segment(row):
         if row['total_send_usd'] >= p99_volume:
@@ -210,26 +316,14 @@ def create_cluster_profiles(df, n_clusters=3):
     
     df_analysis['business_segment'] = df_analysis.apply(assign_segment, axis=1)
     
-    # Analyze segments (using the same features as clustering)
-    segments = df_analysis.groupby('business_segment').agg({
-        'wallet': 'count',
-        'total_send_usd': ['mean', 'median'],
-        'unique_days': ['mean', 'median'], 
-        'origin_chains': ['mean', 'median'],
-        'dest_chains': ['mean', 'median'],
-        'currency_sends': ['mean', 'median'],
-        'call_count': ['mean', 'median'],
-        'cross_chain_swaps': ['mean', 'median'],
-        'bridges': ['mean', 'median'],
-        'distinct_routes': ['mean', 'median']
-    }).round(2)
+    # Cross-tabulation of business segments vs algorithmic clusters
+    crosstab = pd.crosstab(df_analysis['business_segment'], df_analysis['cluster'], margins=True)
+    print(f"\n📊 Business Segments vs Algorithmic Clusters:")
+    print(crosstab)
     
-    print("\n📈 Segment Characteristics:")
-    print(segments)
-    
-    # Save segment analysis
-    segments.to_csv("business_segments_analysis.csv")
-    print(f"\n💾 Segment analysis saved to: business_segments_analysis.csv")
+    # Save comparison
+    crosstab.to_csv("business_vs_algorithmic_clusters.csv")
+    print(f"\n💾 Comparison saved to: business_vs_algorithmic_clusters.csv")
     
     return df_analysis
 
@@ -240,29 +334,34 @@ if __name__ == "__main__":
     if df is not None and len(df) > 0:
         
         # Prepare features for clustering
-        X_scaled, X_sample_scaled, sample_wallets, clustering_features, df_full = prepare_clustering_features(df)
+        X_scaled, clustering_features, wallet_indices = prepare_clustering_features(df)
         
-        # Perform hierarchical clustering
-        linkage_matrix = perform_hierarchical_clustering(X_sample_scaled)
+        # Perform PCA analysis
+        pca, X_pca = perform_pca_analysis(X_scaled)
         
-        # Create dendrogram
-        fig = create_dendrogram_plotly(X_sample_scaled, sample_wallets, clustering_features)
+        # Perform k-means clustering on PCA components
+        kmeans, cluster_labels, inertias = perform_kmeans_clustering(X_pca)
+        
+        # Create PCA visualization
+        fig = create_pca_visualization(X_pca, cluster_labels, clustering_features)
         
         # Analyze clusters
-        analyze_clusters(X_scaled, linkage_matrix, df_full)
+        df_with_clusters, cluster_profiles = analyze_clusters(df, cluster_labels, clustering_features)
         
-        # Create business-interpretable segments
-        df_with_segments = create_cluster_profiles(df_full)
+        # Compare with business segments
+        df_final = create_business_segments(df_with_clusters)
         
         print(f"\n🎯 SUMMARY")
         print("=" * 60)
-        print(f"✅ Hierarchical clustering completed")
-        print(f"📊 Dendrogram visualization: dendrogram.html")
-        print(f"📈 Business segments analysis: business_segments_analysis.csv")
+        print(f"✅ PCA + K-means clustering completed")
+        print(f"📊 PCA visualization: pca_clusters.html")
+        print(f"📈 Cluster profiles: cluster_profiles_detailed.csv")
+        print(f"🔍 Business comparison: business_vs_algorithmic_clusters.csv")
         print(f"\n💡 Next steps:")
-        print(f"   1. Review dendrogram to identify natural cluster count")
-        print(f"   2. Compare algorithmic clusters with business segments")
-        print(f"   3. Refine segmentation strategy based on insights")
+        print(f"   1. Review PCA visualization to understand cluster separation")
+        print(f"   2. Examine cluster profiles for business interpretation")
+        print(f"   3. Compare algorithmic vs business segmentation")
+        print(f"   4. Adjust cluster count if needed based on business logic")
         
     else:
         print("❌ No data to analyze") 
