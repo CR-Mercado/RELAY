@@ -229,7 +229,7 @@ rough segmentation.
 Each PC is a weighted combination of original features:
 Higher absolute weights = more important for that component
 
-🎯 PC1 (64.7% of variance):
+🎯 PC1 (64.7% of variance): Multi-chain/complex usage 
    + 0.390 × dest_chains
    + 0.380 × origin_chains
    + 0.377 × distinct_routes
@@ -241,7 +241,7 @@ Higher absolute weights = more important for that component
    + 0.201 × total_send_usd_log
    📝 Interpretation: Higher PC1 = More dest_chains, origin_chains
 
-🎯 PC2 (11.0% of variance):
+🎯 PC2 (11.0% of variance): high value - specific usage (limited # destinations)
    + 0.695 × total_send_usd_log
    - 0.680 × call_count_log
    + 0.146 × currency_sends
@@ -253,7 +253,7 @@ Higher absolute weights = more important for that component
    - 0.018 × cross_chain_swaps_log
    📝 Interpretation: Higher PC2 = More total_send_usd_log, currency_sends + Less call_count_log, dest_chains
 
-🎯 PC3 (8.7% of variance):
+🎯 PC3 (8.7% of variance): Simple bridging, not engaged in complex swaps.
    + 0.688 × bridges_log
    - 0.565 × cross_chain_swaps_log
    - 0.268 × currency_sends
@@ -293,7 +293,11 @@ Higher absolute weights = more important for that component
 > Are there meaningful patterns associated with Users FIRST Relay? 
 
 Not really, the expected EVM alt L1s, L2s, + Solana drive the most first source activity. 
-It is interesting to see avg amounts 
+It is interesting to see avg amounts associated with the "seriousness" of the DeFi on a chain (ETH, Arb, Base).
+And of course interesting how the long-tail chain Abstract seems to be pulling users to use Relay (maybe a unique bridge for serving that EVM).
+
+zora, appchain, eclipse, abstract, and soneium are noticeable. But given lower avg_amounts 
+they seem to be a top of funnel play vs a niche revenue play.
 
 📈 Top 10 First Source Chains:
 first_source_chain  wallet_count  percentage  avg_amount
@@ -333,3 +337,31 @@ first_source_chain first_dest_chain  wallet_count  percentage  avg_amount
           optimism             base         87439        2.48       24.29
           appchain             base         73640        2.09       36.74
           arbitrum           solana         72303        2.05      654.22
+
+--------------------------------------------------------------------
+
+Bringing in across and deBridge bridge data sourced from Flipside. 
+Filtering to only wallets that use Relay to then analyze 
+Relay Only vs Relay+Other wallets. 
+Worth considering if specific routes have been done on other platforms 
+but never done on Relay. Will need to clean up the chain names to align 
+sources first. 
+
+Nobody who has used across or deBridge to go to abstract also used Relay 
+to go to abstract. 
+
+----------------------------------------
+🎭 Personas by Loyalty Type:
+loyalty_type        multi-platform  relay-only      All
+persona
+Basic Bridge Users          125215     1433724  1558939
+High Value Users             87747     1210063  1297810
+Multi-Chain Users            82560      587822   670382
+All                         295522     3231609  3527131
+
+📈 Loyalty Distribution by Persona (%):
+loyalty_type        multi-platform  relay-only
+persona
+Basic Bridge Users             8.0        92.0
+High Value Users               6.8        93.2
+Multi-Chain Users             12.3        87.7
