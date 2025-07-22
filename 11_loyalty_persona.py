@@ -178,12 +178,17 @@ def map_clusters_to_personas(features_df, pca_df):
     try:
         print("🏷️ Mapping clusters to business personas...")
         
-        # Merge original features with cluster assignments
+        # Merge original features with cluster assignments AND PCA scores
+        pca_columns = [col for col in pca_df.columns if col.startswith('PC')]
+        merge_columns = ['wallet', 'cluster_id'] + pca_columns
+        
         cluster_features_df = features_df.merge(
-            pca_df[['wallet', 'cluster_id']], 
+            pca_df[merge_columns], 
             on='wallet', 
             how='inner'
         )
+        
+        print(f"✅ Merged features with PCA scores: {pca_columns}")
         
         # Calculate average behavior profiles for each cluster
         business_features = [
@@ -370,12 +375,22 @@ def save_results(merged_df, db_name="relay_analysis.db"):
         # Save to SQLite
         conn = sqlite3.connect(db_name)
         
-        # Select key columns for the table
-        table_df = merged_df[[
+        # Select key columns for the table including PCA scores
+        pca_columns = [col for col in merged_df.columns if col.startswith('PC')]
+        
+        base_columns = [
             'wallet_', 'persona', 'cluster_id', 'loyalty_type', 'n_platforms', 
             'n_source_chains', 'n_dest_chains', 'total_amount_usd', 'total_tx_count',
             'origin_chains', 'dest_chains', 'currency_sends', 'total_send_usd'
-        ]].copy()
+        ]
+        
+        # Include PCA scores if they exist
+        all_columns = base_columns + pca_columns
+        available_columns = [col for col in all_columns if col in merged_df.columns]
+        
+        table_df = merged_df[available_columns].copy()
+        
+        print(f"💾 Saving {len(available_columns)} columns including {len(pca_columns)} PCA components")
         
         table_df.to_sql('loyalty_persona_final', conn, if_exists='replace', index=False)
         
