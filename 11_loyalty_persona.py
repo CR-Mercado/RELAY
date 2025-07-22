@@ -375,14 +375,19 @@ def save_results(merged_df, db_name="relay_analysis.db"):
         # Save to SQLite
         conn = sqlite3.connect(db_name)
         
-        # Select key columns for the table including PCA scores
+        # Select key columns for the table including PCA scores and ALL business features
         pca_columns = [col for col in merged_df.columns if col.startswith('PC')]
+        
+        # Include ALL business features that are calculated
+        business_features = [
+            'origin_chains', 'dest_chains', 'currency_sends', 'call_count',
+            'distinct_routes', 'cross_chain_swaps', 'bridges', 'unique_days', 'total_send_usd'
+        ]
         
         base_columns = [
             'wallet_', 'persona', 'cluster_id', 'loyalty_type', 'n_platforms', 
-            'n_source_chains', 'n_dest_chains', 'total_amount_usd', 'total_tx_count',
-            'origin_chains', 'dest_chains', 'currency_sends', 'total_send_usd'
-        ]
+            'n_source_chains', 'n_dest_chains', 'total_amount_usd', 'total_tx_count'
+        ] + business_features
         
         # Include PCA scores if they exist
         all_columns = base_columns + pca_columns
