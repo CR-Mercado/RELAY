@@ -246,13 +246,72 @@ def calculate_cluster_centroids_fallback():
     
     return centroid_df
 
+def load_sample_data_points(db_name="relay_analysis.db", sample_size=1000):
+    """
+    Load a random sample of individual data points from each cluster.
+    """
+    
+    conn = sqlite3.connect(db_name)
+    
+    try:
+        print(f"🔍 Loading random sample of {sample_size} points per cluster...")
+        
+        # Check if PCA columns exist
+        columns_query = "PRAGMA table_info(loyalty_persona_final)"
+        columns_df = pd.read_sql(columns_query, conn)
+        available_columns = columns_df['name'].tolist()
+        pca_columns = [col for col in available_columns if col.startswith('PC')]
+        
+        if len(pca_columns) < 3:
+            print(f"⚠️  No PCA data available for sampling")
+            return None
+        
+        # Sample data points from each cluster
+        sample_data = []
+        
+        # Get distinct clusters
+        cluster_query = "SELECT DISTINCT cluster_id, persona FROM loyalty_persona_final WHERE PC1 IS NOT NULL"
+        clusters_df = pd.read_sql(cluster_query, conn)
+        
+        for _, cluster_row in clusters_df.iterrows():
+            cluster_id = cluster_row['cluster_id']
+            persona = cluster_row['persona']
+            
+            # Random sample from this cluster
+            sample_query = f"""
+            SELECT cluster_id, persona, PC1, PC2, PC3
+            FROM loyalty_persona_final 
+            WHERE cluster_id = {cluster_id} AND PC1 IS NOT NULL
+            ORDER BY RANDOM()
+            LIMIT {sample_size}
+            """
+            
+            cluster_sample = pd.read_sql(sample_query, conn)
+            sample_data.append(cluster_sample)
+        
+        if sample_data:
+            all_samples = pd.concat(sample_data, ignore_index=True)
+            print(f"✅ Loaded {len(all_samples)} sample points across {len(clusters_df)} clusters")
+            return all_samples
+        else:
+            return None
+        
+    except Exception as e:
+        print(f"❌ Error loading sample data: {e}")
+        return None
+    finally:
+        conn.close()
+
 def create_3d_pca_visualization(centroid_df, output_file="pca_persona_viz.html"):
     """
-    Create 3D PCA visualization showing persona cluster centroids.
+    Create 3D PCA visualization showing persona cluster centroids and sample data points.
     """
     
     try:
         print("🎨 Creating 3D PCA persona visualization...")
+        
+        # Load sample data points
+        sample_df = load_sample_data_points(sample_size=1000)
         
         # Create 3D scatter plot
         fig = go.Figure()
@@ -260,9 +319,36 @@ def create_3d_pca_visualization(centroid_df, output_file="pca_persona_viz.html")
         # Define colors for personas (updated as requested)
         persona_colors = {
             'Basic Bridge Users': '#7e61cc',     # Relay Purple
-            'High Value Users': '#8B0000',                 # Optimism Red
-            'Multi-Chain Users': '#00008B'                 # Base Blue
+            'High Value Users': '#8B0000',       # Optimism Red
+            'Multi-Chain Users': '#00008B'       # Base Blue
         }
+        
+        # Add sample data points first (so centroids appear on top)
+        if sample_df is not None:
+            print("🔸 Adding sample data points...")
+            
+            for persona in sample_df['persona'].unique():
+                persona_data = sample_df[sample_df['persona'] == persona]
+                color = persona_colors.get(persona, '#d62728')
+                
+                fig.add_trace(go.Scatter3d(
+                    x=persona_data['PC1'],
+                    y=persona_data['PC2'], 
+                    z=persona_data['PC3'],
+                    mode='markers',
+                    marker=dict(
+                        size=2,  # Small points
+                        color=color,
+                        opacity=0.3,  # Semi-transparent
+                        line=dict(width=0)
+                    ),
+                    name=f"{persona} (sample)",
+                    hovertemplate=f"<b>{persona}</b><br>" +
+                                 "PC1: %{x:.3f}<br>" +
+                                 "PC2: %{y:.3f}<br>" +
+                                 "PC3: %{z:.3f}<extra></extra>",
+                    showlegend=False  # Don't clutter legend with sample points
+                ))
         
         for _, row in centroid_df.iterrows():
             persona = row['persona']
@@ -291,8 +377,13 @@ def create_3d_pca_visualization(centroid_df, output_file="pca_persona_viz.html")
             ))
         
         # Update layout
+        title_text = "PCA Cluster Centroids by User Personas<br><sub>Sphere size = ceil(0.05×sqrt(wallet count))"
+        if sample_df is not None:
+            title_text += f" | {len(sample_df)} sample points shown"
+        title_text += "</sub>"
+        
         fig.update_layout(
-            title="PCA Cluster Centroids by User Personas<br><sub>Sphere size = ceil(0.05×sqrt(wallet count))</sub>",
+            title=title_text,
             scene=dict(
                 xaxis_title="PC1 (Multi-chain/Complex Usage)",
                 yaxis_title="PC2 (High Value/Specific Usage)",
@@ -362,11 +453,16 @@ if __name__ == "__main__":
         print(f"✅ 3D PCA persona visualization created!")
         print(f"📊 Showing {len(centroid_df)} persona clusters")
         print(f"🎨 Sphere sizes based on ceil(0.05×sqrt(wallet count))")
+        print(f"🔸 Sample points: 1,000 random wallets per cluster (size=2, opacity=0.3)")
         print(f"🌈 Colors: Purple (Basic), Red (High Value), Blue (Multi-Chain)")
         print(f"💾 Data source: Database (or fallback if PCA scores not saved)")
         print(f"\n💡 Interpretation:")
         print(f"   🟣 Basic Bridge Users: Low PC1, simple usage")
         print(f"   🔴 High Value Users: Moderate PC1, some complexity") 
         print(f"   🔵 Multi-Chain Users: High PC1, maximum complexity")
+        print(f"\n🔍 Visualization shows:")
+        print(f"   📍 Large spheres = cluster centroids")
+        print(f"   🔸 Small dots = individual wallet samples")
+        print(f"   📈 Spread shows cluster variance and overlap")
     else:
         print("❌ Failed to create visualization") 
