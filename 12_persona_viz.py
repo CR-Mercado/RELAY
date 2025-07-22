@@ -254,7 +254,7 @@ def load_sample_data_points(db_name="relay_analysis.db", sample_size=1000):
     conn = sqlite3.connect(db_name)
     
     try:
-        print(f"🔍 Loading random sample of {sample_size} points per cluster...")
+        print(f"🔍 Loading random sample of {sample_size} points per cluster (|PCA| < 10)...")
         
         # Check if PCA columns exist
         columns_query = "PRAGMA table_info(loyalty_persona_final)"
@@ -277,11 +277,15 @@ def load_sample_data_points(db_name="relay_analysis.db", sample_size=1000):
             cluster_id = cluster_row['cluster_id']
             persona = cluster_row['persona']
             
-            # Random sample from this cluster
+            # Random sample from this cluster (filtered for viewing simplicity)
             sample_query = f"""
             SELECT cluster_id, persona, PC1, PC2, PC3
             FROM loyalty_persona_final 
-            WHERE cluster_id = {cluster_id} AND PC1 IS NOT NULL
+            WHERE cluster_id = {cluster_id} 
+                AND PC1 IS NOT NULL 
+                AND ABS(PC1) < 10 
+                AND ABS(PC2) < 10 
+                AND ABS(PC3) < 10
             ORDER BY RANDOM()
             LIMIT {sample_size}
             """
@@ -453,7 +457,7 @@ if __name__ == "__main__":
         print(f"✅ 3D PCA persona visualization created!")
         print(f"📊 Showing {len(centroid_df)} persona clusters")
         print(f"🎨 Sphere sizes based on ceil(0.05×sqrt(wallet count))")
-        print(f"🔸 Sample points: 1,000 random wallets per cluster (size=2, opacity=0.3)")
+        print(f"🔸 Sample points: 1,000 random wallets per cluster (|PCA| < 10, size=2, opacity=0.3)")
         print(f"🌈 Colors: Purple (Basic), Red (High Value), Blue (Multi-Chain)")
         print(f"💾 Data source: Database (or fallback if PCA scores not saved)")
         print(f"\n💡 Interpretation:")
