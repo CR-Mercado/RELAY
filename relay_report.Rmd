@@ -11,6 +11,196 @@ editor_options:
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
+```{css, echo=FALSE}
+/* Typography & Layout */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  color: #2c3e50;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  margin: 0;
+  padding: 0;
+  font-size: 18px;
+}
+
+.main-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  background: white;
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  border-radius: 8px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+/* Enhanced Typography Hierarchy */
+h1 { 
+  color: #2c3e50;
+  border-bottom: 3px solid #7e61cc;
+  padding-bottom: 15px;
+  margin-bottom: 30px;
+  font-size: 2.5em;
+  font-weight: 600;
+}
+
+h2 {
+  color: #34495e;
+  margin-top: 50px;
+  margin-bottom: 25px;
+  font-size: 1.8em;
+  font-weight: 600;
+  border-bottom: 2px solid #7e61cc;
+  padding-bottom: 8px;
+}
+
+h3 {
+  color: #34495e;
+  margin-top: 35px;
+  margin-bottom: 20px;
+  font-size: 1.4em;
+  font-weight: 500;
+}
+
+h4 {
+  color: #34495e;
+  margin-top: 30px;
+  margin-bottom: 15px;
+  font-size: 1.2em;
+  font-weight: 500;
+}
+
+/* Better paragraph spacing and readability */
+p {
+  margin-bottom: 18px;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+/* Section spacing */
+.section {
+  margin-bottom: 60px;
+}
+
+/* Enhanced list styling */
+ul, ol {
+  margin-bottom: 25px;
+  padding-left: 25px;
+  font-size: 18px;
+}
+
+li {
+  margin-bottom: 10px;
+  line-height: 1.7;
+  font-size: 18px;
+}
+
+/* Improved blockquote styling for callouts */
+blockquote {
+  border-left: 4px solid #7e61cc;
+  padding-left: 20px;
+  margin: 25px 0;
+  font-style: italic;
+  color: #5a6c7d;
+  background-color: #f8f9fa;
+  padding: 15px 20px;
+  border-radius: 0 4px 4px 0;
+  font-size: 18px;
+}
+
+/* Code styling */
+code {
+  background-color: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  color: #e74c3c;
+  font-size: 16px;
+}
+
+pre {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  overflow-x: auto;
+  margin: 20px 0;
+  font-size: 16px;
+}
+
+/* Table of contents styling if enabled */
+#TOC {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 30px;
+  font-size: 18px;
+}
+
+#TOC ul {
+  list-style-type: none;
+  padding-left: 15px;
+}
+
+#TOC > ul {
+  padding-left: 0;
+}
+
+#TOC li {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+#TOC a {
+  color: #7e61cc;
+  text-decoration: none;
+}
+
+#TOC a:hover {
+  color: #6b4fb3;
+  text-decoration: underline;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .main-container {
+    margin: 10px;
+    padding: 20px 15px;
+  }
+  
+  body {
+    font-size: 16px;
+  }
+  
+  h1 {
+    font-size: 2em;
+  }
+  
+  h2 {
+    font-size: 1.5em;
+  }
+  
+  p, li, ul, ol {
+    font-size: 16px;
+  }
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white;
+    font-size: 14px;
+  }
+  
+  .main-container {
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+```
+
 ```{r, warning=FALSE, message=FALSE}
 library(reactable)
 library(dplyr)
