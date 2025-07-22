@@ -350,18 +350,42 @@ sources first.
 Nobody who has used across or deBridge to go to abstract also used Relay 
 to go to abstract. 
 
-----------------------------------------
-🎭 Personas by Loyalty Type:
-loyalty_type        multi-platform  relay-only      All
-persona
-Basic Bridge Users          125215     1433724  1558939
-High Value Users             87747     1210063  1297810
-Multi-Chain Users            82560      587822   670382
-All                         295522     3231609  3527131
+--------------------
+  Cluster Sizes:
+   Cluster 0: 502,229 wallets (14.2%)
+   Cluster 1: 131,451 wallets (3.7%)
+   Cluster 2: 2,893,451 wallets (82.0%)
+🔍 Cluster Interpretation Logic:
+   Cluster 1: PC1=9.106, PC2=-0.084, PC3=-0.555
+     → Multi-Chain Users (highest PC1 = most multi-chain/complex)
+   Cluster 0: PC1=2.784, PC2=-0.203, PC3=0.442
+     → High Value Users (moderate PC1 = some complexity)
+   Cluster 2: PC1=-0.897, PC2=0.039, PC3=-0.051
+     → Basic Bridge Users (low PC1 = limited complexity)
+   Cluster 0 → High Value Users: 502,229 wallets (14.2%)
+   Cluster 1 → Multi-Chain Users: 131,451 wallets (3.7%)
+   Cluster 2 → Basic Bridge Users: 2,893,451 wallets (82.0%)
 
-📈 Loyalty Distribution by Persona (%):
-loyalty_type        multi-platform  relay-only
-persona
-Basic Bridge Users             8.0        92.0
-High Value Users               6.8        93.2
-Multi-Chain Users             12.3        87.7
+Persona Characteristics (Average Values):
+                    origin_chains  dest_chains  currency_sends  ...  bridges  unique_days  total_send_usd
+persona                                                         ...
+Basic Bridge Users           1.28         1.37            1.10  ...     1.18         1.50          271.70
+High Value Users             4.11         5.14            2.29  ...     7.55         6.86         1289.98
+Multi-Chain Users            9.90        11.51            5.97  ...    28.78        21.94         3645.01
+----------------------------------------
+🎯 FINAL SUMMARY
+============================================================
+✅ Loyalty + Persona analysis complete!
+📊 Analyzed 3,527,131 wallets
+🎭 3 distinct personas identified
+🔄 2 loyalty types analyzed
+
+💡 Key Insights:
+   📈 8.4% of users are multi-platform
+   🎭 Most common persona: Basic Bridge Users (82.0%)
+
+🔍 Next steps:
+   1. Review persona characteristics for business strategy
+   2. Analyze loyalty patterns for retention opportunities
+   3. Develop persona-specific product features
+   4. Build targeted marketing campaigns by persona

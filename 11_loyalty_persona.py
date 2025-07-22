@@ -1,49 +1,291 @@
 import sqlite3
 import pandas as pd
 import numpy as np
-from pathlib import Path
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
-def load_pca_components(csv_path="pca_component_loadings.csv"):
+def load_wallet_features_from_db(db_name="relay_analysis.db"):
     """
-    Load PCA component loadings to transform wallet features into persona scores.
-    """
-    try:
-        components_df = pd.read_csv(csv_path, index_col=0)
-        print(f"✅ Loaded PCA components: {components_df.shape}")
-        print(f"   Features: {list(components_df.index)}")
-        print(f"   Components: {list(components_df.columns)}")
-        return components_df
-    except Exception as e:
-        print(f"❌ Error loading PCA components: {e}")
-        return None
-
-def get_loyalty_classification(db_name="relay_analysis.db"):
-    """
-    Get loyalty classification (relay-only vs multi-platform) with user metrics.
+    Load wallet features directly from relay_transactions, filtered to loyalty users.
     """
     
     conn = sqlite3.connect(db_name)
     
     try:
-        print("🔍 Calculating loyalty classification...")
+        print("🔍 Calculating wallet features from relay_transactions...")
+        
+        # Calculate features on-the-fly, joining with loyalty_aggregate to ensure same user set
+        features_query = """
+        WITH exclusions AS (
+            SELECT '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae' as wallet
+            UNION ALL SELECT '0x4f8c9056bb8a3616693a76922fa35d53c056e5b3'
+            UNION ALL SELECT '0xde1e598b81620773454588b85d6b5d4eec32573e'
+            UNION ALL SELECT '0x864b314d4c5a0399368609581d3e8933a63b9232'
+            UNION ALL SELECT '0x341e94069f53234fe6dabef707ad424830525715'
+            UNION ALL SELECT '0x896ff3b31ecc105d4f23582c73416484ecc207c6'
+            UNION ALL SELECT '0xf909c4ae16622898b885b89d7f839e0244851c66'
+            UNION ALL SELECT '72z3PVWqpzyDd4CQGsQJU6eGt6fLq4D3ULrSKdMULyY8'
+            UNION ALL SELECT 'zApVWDs3nSychNnUXSS2czhY78Ycopa15zELrK2gAdM'
+            UNION ALL SELECT '5trW3ZogRMxW9tX4pNCMQi1APzx8G6UTcyneWEX2Rk4Q'
+            UNION ALL SELECT '9s3Kyeg2NHeM2xhSqMyp944f8VS2oBYdwvK98AAnW35w'
+            UNION ALL SELECT '0x0000000000000000000000000000000000000000'
+            UNION ALL SELECT '0x000000000000000000000000000000000000dead'
+        ),
+        wallet_features AS (
+            SELECT 
+                r.wallet,
+                COUNT(DISTINCT r.origin_chain_name) as origin_chains,
+                COUNT(DISTINCT r.destination_chain_name) as dest_chains,
+                COUNT(DISTINCT r.user_send_currency) as currency_sends,
+                SUM(CASE WHEN r.is_call = 1 THEN 1 ELSE 0 END) as call_count,
+                COUNT(DISTINCT r.route_source) as distinct_routes,
+                SUM(CASE WHEN r.execution_kind = 'Cross chain swap' THEN 1 ELSE 0 END) as cross_chain_swaps,
+                SUM(CASE WHEN r.execution_kind = 'Bridge' THEN 1 ELSE 0 END) as bridges,
+                COUNT(DISTINCT DATE(r.created_at)) as unique_days,
+                SUM(r.user_send_currency_usd) as total_send_usd
+            FROM relay_transactions r
+            WHERE r.wallet NOT IN (SELECT wallet FROM exclusions)
+                AND r.created_at >= '2025-01-01'
+            GROUP BY r.wallet
+        )
+        SELECT 
+            wallet,
+            origin_chains,
+            dest_chains,
+            currency_sends,
+            call_count,
+            distinct_routes,
+            cross_chain_swaps,
+            bridges,
+            unique_days,
+            total_send_usd,
+            -- Log transformations for heavy-tailed features
+            LOG10(CASE WHEN call_count > 0 THEN call_count ELSE 1 END) as call_count_log,
+            LOG10(CASE WHEN cross_chain_swaps > 0 THEN cross_chain_swaps ELSE 1 END) as cross_chain_swaps_log,
+            LOG10(CASE WHEN bridges > 0 THEN bridges ELSE 1 END) as bridges_log,
+            LOG10(CASE WHEN total_send_usd > 0 THEN total_send_usd ELSE 1 END) as total_send_usd_log
+        FROM wallet_features
+        """
+        
+        features_df = pd.read_sql(features_query, conn)
+        
+        print(f"📊 Calculated features for {len(features_df):,} wallets")
+        print(f"   Features: origin_chains, dest_chains, currency_sends, call_count, distinct_routes,")
+        print(f"            cross_chain_swaps, bridges, unique_days, total_send_usd + log versions")
+        
+        return features_df
+        
+    except Exception as e:
+        print(f"❌ Error calculating wallet features: {e}")
+        return None
+    finally:
+        conn.close()
+
+def perform_pca_transformation(features_df):
+    """
+    Perform PCA transformation on wallet features for clustering.
+    """
+    
+    try:
+        print("🔄 Performing PCA transformation...")
+        
+        # Select features for PCA (use log versions for heavy-tailed features)
+        clustering_features = [
+            'origin_chains', 'dest_chains', 'currency_sends', 'call_count_log', 
+            'distinct_routes', 'cross_chain_swaps_log', 'bridges_log', 
+            'unique_days', 'total_send_usd_log'
+        ]
+        
+        # Extract feature matrix
+        X = features_df[clustering_features].fillna(0)
+        
+        # Standardize features before PCA
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        # Perform PCA
+        pca = PCA(n_components=5)  # Keep top 5 components
+        X_pca = pca.fit_transform(X_scaled)
+        
+        # Create PCA results dataframe
+        pca_df = pd.DataFrame({
+            'wallet': features_df['wallet'].values,
+            'PC1': X_pca[:, 0],
+            'PC2': X_pca[:, 1], 
+            'PC3': X_pca[:, 2],
+            'PC4': X_pca[:, 3],
+            'PC5': X_pca[:, 4]
+        })
+        
+        # Show PCA explained variance
+        print(f"\n📊 PCA Explained Variance:")
+        cumulative_variance = 0
+        for i, var in enumerate(pca.explained_variance_ratio_):
+            cumulative_variance += var
+            print(f"   PC{i+1}: {var:.3f} ({var*100:.1f}%) - Cumulative: {cumulative_variance:.3f} ({cumulative_variance*100:.1f}%)")
+        
+        print(f"✅ PCA transformation complete: {pca_df.shape}")
+        
+        return pca_df, pca, scaler, clustering_features
+        
+    except Exception as e:
+        print(f"❌ Error performing PCA: {e}")
+        return None, None, None, None
+
+def perform_kmeans_clustering(pca_df, n_clusters=3):
+    """
+    Perform k-means clustering on PCA components to find natural user groups.
+    """
+    
+    try:
+        print(f"🎯 Performing k-means clustering with {n_clusters} clusters...")
+        
+        # Use top 3 PCA components for clustering
+        X_pca = pca_df[['PC1', 'PC2', 'PC3']].values
+        
+        # Perform k-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(X_pca)
+        
+        # Add cluster labels to dataframe
+        pca_df['cluster_id'] = cluster_labels
+        
+        # Calculate cluster centroids and sizes
+        cluster_centroids = pca_df.groupby('cluster_id')[['PC1', 'PC2', 'PC3']].mean()
+        cluster_sizes = pca_df['cluster_id'].value_counts().sort_index()
+        
+        print(f"\n📊 Cluster Results:")
+        print(f"   Cluster Centroids (PCA space):")
+        print(cluster_centroids.round(3))
+        
+        print(f"\n   Cluster Sizes:")
+        for cluster_id, size in cluster_sizes.items():
+            pct = size / len(pca_df) * 100
+            print(f"   Cluster {cluster_id}: {size:,} wallets ({pct:.1f}%)")
+        
+        return pca_df, kmeans, cluster_centroids
+        
+    except Exception as e:
+        print(f"❌ Error performing k-means clustering: {e}")
+        return None, None, None
+
+def map_clusters_to_personas(features_df, pca_df):
+    """
+    Map k-means clusters to business-interpretable personas based on actual behavior profiles.
+    """
+    
+    try:
+        print("🏷️ Mapping clusters to business personas...")
+        
+        # Merge original features with cluster assignments
+        cluster_features_df = features_df.merge(
+            pca_df[['wallet', 'cluster_id']], 
+            on='wallet', 
+            how='inner'
+        )
+        
+        # Calculate average behavior profiles for each cluster
+        business_features = [
+            'origin_chains', 'dest_chains', 'currency_sends', 'call_count',
+            'distinct_routes', 'cross_chain_swaps', 'bridges', 'unique_days', 'total_send_usd'
+        ]
+        
+        cluster_profiles = cluster_features_df.groupby('cluster_id')[business_features].mean().round(2)
+        
+        print(f"\n📈 Cluster Business Profiles:")
+        print(cluster_profiles)
+        
+                 # Get cluster centroids in PCA space for interpretation
+        pca_centroids = pca_df.groupby('cluster_id')[['PC1', 'PC2', 'PC3']].mean()
+        print(f"\n📊 PCA Centroids for Interpretation:")
+        print(pca_centroids.round(3))
+        
+        # Interpret clusters based on PCA centroid positions
+        # Use your PCA component interpretations:
+        # PC1 (64.7%): Multi-chain/complex usage 
+        # PC2 (11.0%): High value - specific usage (limited destinations)
+        # PC3 (8.7%): Simple bridging, not engaged in complex swaps
+        
+        # Manual interpretation based on actual centroid positions
+        # Look at the centroids and assign personas based on PCA interpretations
+        cluster_personas = {}
+        
+        # Sort clusters by PC1 (primary variance component) 
+        pc1_sorted = pca_centroids.sort_values('PC1', ascending=False)
+        
+        print(f"\n🔍 Cluster Interpretation Logic:")
+        for i, (cluster_id, row) in enumerate(pc1_sorted.iterrows()):
+            print(f"   Cluster {cluster_id}: PC1={row['PC1']:.3f}, PC2={row['PC2']:.3f}, PC3={row['PC3']:.3f}")
+            
+            if i == 0:  # Highest PC1
+                cluster_personas[cluster_id] = "Multi-Chain Users"
+                print(f"     → Multi-Chain Users (highest PC1 = most multi-chain/complex)")
+            elif row['PC1'] > 0:  # Positive PC1 but not highest
+                cluster_personas[cluster_id] = "High Value Users" 
+                print(f"     → High Value Users (moderate PC1 = some complexity)")
+            else:  # Low/negative PC1
+                cluster_personas[cluster_id] = "Basic Bridge Users"
+                print(f"     → Basic Bridge Users (low PC1 = limited complexity)")
+        
+        def interpret_cluster(cluster_id):
+            return cluster_personas[cluster_id]
+
+        # Create cluster-to-persona mapping
+        cluster_mapping = {}
+        for cluster_id in cluster_profiles.index:
+            persona = interpret_cluster(cluster_id)
+            cluster_mapping[cluster_id] = persona
+            
+            size = len(cluster_features_df[cluster_features_df['cluster_id'] == cluster_id])
+            pct = size / len(cluster_features_df) * 100
+            print(f"   Cluster {cluster_id} → {persona}: {size:,} wallets ({pct:.1f}%)")
+        
+        # Apply persona labels
+        cluster_features_df['persona'] = cluster_features_df['cluster_id'].map(cluster_mapping)
+        
+        # Show final persona distribution
+        print(f"\n📊 Final Persona Distribution:")
+        persona_counts = cluster_features_df['persona'].value_counts()
+        for persona, count in persona_counts.items():
+            pct = count / len(cluster_features_df) * 100
+            print(f"   {persona}: {count:,} ({pct:.1f}%)")
+        
+        # Show persona characteristics
+        print(f"\n📈 Persona Characteristics (Average Values):")
+        persona_profiles = cluster_features_df.groupby('persona')[business_features].mean().round(2)
+        print(persona_profiles)
+        
+        return cluster_features_df, cluster_mapping
+        
+    except Exception as e:
+        print(f"❌ Error mapping clusters to personas: {e}")
+        return None, None
+
+def get_loyalty_classification(db_name="relay_analysis.db"):
+    """
+    Get loyalty classification from the loyalty_aggregate table.
+    """
+    
+    conn = sqlite3.connect(db_name)
+    
+    try:
+        print("🔍 Loading loyalty classification...")
         
         loyalty_query = """
-        WITH loyalty_flag AS (
-            SELECT 
-                wallet_, 
-                CASE 
-                    WHEN COUNT(DISTINCT platform_) = 1 THEN 'relay-only'
-                    ELSE 'multi-platform'
-                END as loyalty_type,
-                COUNT(DISTINCT platform_) as n_platforms,
-                COUNT(DISTINCT source_chain) as n_source_chains,
-                COUNT(DISTINCT destination_chain) as n_dest_chains,
-                SUM(amount_usd) as total_amount_usd,
-                SUM(tx_count) as total_tx_count
-            FROM loyalty_aggregate 
-            GROUP BY wallet_
-        )
-        SELECT * FROM loyalty_flag
+        SELECT 
+            wallet_, 
+            CASE 
+                WHEN COUNT(DISTINCT platform_) = 1 THEN 'relay-only'
+                ELSE 'multi-platform'
+            END as loyalty_type,
+            COUNT(DISTINCT platform_) as n_platforms,
+            COUNT(DISTINCT source_chain) as n_source_chains,
+            COUNT(DISTINCT destination_chain) as n_dest_chains,
+            SUM(amount_usd) as total_amount_usd,
+            SUM(tx_count) as total_tx_count
+        FROM loyalty_aggregate 
+        GROUP BY wallet_
         """
         
         loyalty_df = pd.read_sql(loyalty_query, conn)
@@ -57,194 +299,26 @@ def get_loyalty_classification(db_name="relay_analysis.db"):
         return loyalty_df
         
     except Exception as e:
-        print(f"❌ Error calculating loyalty classification: {e}")
+        print(f"❌ Error loading loyalty classification: {e}")
         return None
     finally:
         conn.close()
 
-def get_wallet_features(db_name="relay_analysis.db"):
+def create_loyalty_persona_analysis(persona_df, loyalty_df):
     """
-    Calculate wallet features on-the-fly from relay_transactions, filtered to loyalty users.
-    """
-    
-    conn = sqlite3.connect(db_name)
-    
-    try:
-        print("🔍 Calculating wallet features from relay_transactions...")
-        
-        # Calculate features on-the-fly, joining with loyalty_aggregate to ensure same user set
-        features_query = """
-                 -- loyalty_aggregate already filters exclusions out 
-         WITH wallet_raw_features AS (
-             SELECT 
-                 r.wallet,
-                 COUNT(DISTINCT r.origin_chain_name) as origin_chains,
-                 COUNT(DISTINCT r.destination_chain_name) as dest_chains,
-                 COUNT(DISTINCT r.user_send_currency) as currency_sends,
-                 SUM(CASE WHEN r.is_call = 1 THEN 1 ELSE 0 END) as call_count,
-                 COUNT(DISTINCT r.route_source) as distinct_routes,
-                 SUM(CASE WHEN r.execution_kind = 'Cross chain swap' THEN 1 ELSE 0 END) as cross_chain_swaps,
-                 SUM(CASE WHEN r.execution_kind = 'Bridge' THEN 1 ELSE 0 END) as bridges,
-                 COUNT(DISTINCT DATE(r.created_at)) as unique_days,
-                 SUM(r.user_send_currency_usd) as total_send_usd
-             FROM relay_transactions r
-             INNER JOIN (SELECT DISTINCT wallet_ FROM loyalty_aggregate) l ON r.wallet = l.wallet_
-             GROUP BY r.wallet
-        )
-        SELECT 
-            wallet,
-            origin_chains,
-            dest_chains,
-            currency_sends,
-            LOG10(CASE WHEN call_count > 0 THEN call_count ELSE 1 END) as call_count_log,
-            distinct_routes,
-            LOG10(CASE WHEN cross_chain_swaps > 0 THEN cross_chain_swaps ELSE 1 END) as cross_chain_swaps_log,
-            LOG10(CASE WHEN bridges > 0 THEN bridges ELSE 1 END) as bridges_log,
-            unique_days,
-            LOG10(CASE WHEN total_send_usd > 0 THEN total_send_usd ELSE 1 END) as total_send_usd_log
-        FROM wallet_raw_features
-        """
-        
-        features_df = pd.read_sql(features_query, conn)
-        
-        print(f"📊 Calculated features for {len(features_df):,} wallets")
-        print(f"   Features: origin_chains, dest_chains, currency_sends, call_count_log,")
-        print(f"            distinct_routes, cross_chain_swaps_log, bridges_log,") 
-        print(f"            unique_days, total_send_usd_log")
-        
-        return features_df
-        
-    except Exception as e:
-        print(f"❌ Error calculating wallet features: {e}")
-        return None
-    finally:
-        conn.close()
-
-def transform_to_pca_scores(features_df, components_df):
-    """
-    Transform wallet features to PCA scores using component loadings.
+    Combine persona and loyalty data for comprehensive analysis.
     """
     
     try:
-        print("🔄 Transforming features to PCA scores...")
-        
-        # Ensure feature order matches component loadings
-        feature_cols = list(components_df.index)
-        missing_features = [f for f in feature_cols if f not in features_df.columns]
-        
-        if missing_features:
-            print(f"❌ Missing features: {missing_features}")
-            return None
-        
-        # Extract feature matrix in correct order
-        X = features_df[feature_cols].values
-        
-        # Transform to PCA scores: X @ components
-        pca_scores = X @ components_df.values
-        
-        # Create PCA scores DataFrame
-        pca_df = pd.DataFrame(
-            pca_scores,
-            columns=[f'PC{i+1}' for i in range(len(components_df.columns))],
-            index=features_df.index
-        )
-        
-        # Add wallet identifier
-        pca_df['wallet'] = features_df['wallet'].values
-        
-        print(f"✅ PCA transformation complete: {pca_df.shape}")
-        
-        return pca_df
-        
-    except Exception as e:
-        print(f"❌ Error transforming to PCA scores: {e}")
-        return None
-
-def assign_personas(pca_df, n_clusters=3):
-    """
-    Assign personas based on highest relative ranking across top 3 PCA dimensions.
-    Each wallet gets assigned to the cluster where it has the strongest relative position.
-    """
-    
-    try:
-        print(f"🎭 Assigning {n_clusters} personas using relative ranking approach...")
-        
-        # Calculate percentile ranks for top 3 PCA components by variance
-        pca_df['PC1_rank'] = pca_df['PC1'].rank(pct=True)  # 64.7% variance
-        pca_df['PC2_rank'] = pca_df['PC2'].rank(pct=True)  # 11.0% variance  
-        pca_df['PC3_rank'] = pca_df['PC3'].rank(pct=True)  # 8.7% variance
-        
-        # Assign each wallet to the cluster where it has the highest relative rank
-        def classify_persona(row):
-            ranks = {
-                'PC1_rank': row['PC1_rank'],
-                'PC2_rank': row['PC2_rank'], 
-                'PC3_rank': row['PC3_rank']
-            }
-            
-            # Find the PCA dimension where this wallet ranks highest
-            highest_rank_pc = max(ranks, key=ranks.get)
-            
-            # Map to persona based on strongest PCA dimension
-            if highest_rank_pc == 'PC1_rank':
-                return "Multi-Chain Users"      # Strongest in multi-chain engagement
-            elif highest_rank_pc == 'PC2_rank':
-                return "High Value Users"       # Strongest in high value/low frequency
-            else:  # PC3_rank
-                return "Basic Bridge Users"           # Strongest in bridge-focused behavior
-        
-        # Apply persona classification
-        pca_df['persona'] = pca_df.apply(classify_persona, axis=1)
-        
-        # Show persona distribution
-        print(f"\n📊 Persona Distribution (by strongest PCA dimension):")
-        persona_counts = pca_df['persona'].value_counts()
-        for persona, count in persona_counts.items():
-            pct = count / len(pca_df) * 100
-            print(f"   {persona}: {count:,} ({pct:.1f}%)")
-        
-        # Show cluster characteristics
-        print(f"\n📈 Cluster Characteristics:")
-        print("   Average PCA Scores by Persona:")
-        cluster_stats = pca_df.groupby('persona')[['PC1', 'PC2', 'PC3', 'PC4', 'PC5']].mean().round(3)
-        print(cluster_stats)
-        
-        print(f"\n   Average Percentile Ranks by Persona:")
-        rank_stats = pca_df.groupby('persona')[['PC1_rank', 'PC2_rank', 'PC3_rank']].mean().round(3)
-        print(rank_stats)
-        
-        # Show validation: each persona should be strongest in its target dimension
-        print(f"\n✅ Validation - Average ranks by persona (should be highest in target PC):")
-        for persona in persona_counts.index:
-            persona_data = pca_df[pca_df['persona'] == persona]
-            avg_ranks = persona_data[['PC1_rank', 'PC2_rank', 'PC3_rank']].mean()
-            strongest_pc = avg_ranks.idxmax()
-            print(f"   {persona}: Strongest in {strongest_pc} (avg rank: {avg_ranks[strongest_pc]:.3f})")
-        
-        return pca_df
-        
-    except Exception as e:
-        print(f"❌ Error assigning personas: {e}")
-        return None
-
-def create_loyalty_persona_analysis(loyalty_df, persona_df):
-    """
-    Combine loyalty classification with persona assignment for comprehensive analysis.
-    """
-    
-    try:
-        print("🔄 Combining loyalty and persona data...")
+        print("🔄 Combining persona and loyalty data...")
         
         # Merge on wallet (handle different column names)
-        if 'wallet_' in loyalty_df.columns and 'wallet' in persona_df.columns:
-            merged_df = loyalty_df.merge(
-                persona_df, 
-                left_on='wallet_', 
-                right_on='wallet', 
-                how='inner'
-            )
-        else:
-            merged_df = loyalty_df.merge(persona_df, on='wallet', how='inner')
+        merged_df = persona_df.merge(
+            loyalty_df, 
+            left_on='wallet', 
+            right_on='wallet_', 
+            how='inner'
+        )
         
         print(f"✅ Merged data: {len(merged_df):,} wallets")
         
@@ -285,50 +359,34 @@ def create_loyalty_persona_analysis(loyalty_df, persona_df):
         print(f"❌ Error creating loyalty persona analysis: {e}")
         return None
 
-def save_loyalty_persona_table(merged_df, db_name="relay_analysis.db", table_name="loyalty_persona"):
+def save_results(merged_df, db_name="relay_analysis.db"):
     """
-    Save the combined loyalty + persona data to SQLite table.
+    Save results to database and CSV files.
     """
-    
-    conn = sqlite3.connect(db_name)
     
     try:
-        print(f"💾 Saving loyalty persona table: {table_name}")
+        print("💾 Saving results...")
+        
+        # Save to SQLite
+        conn = sqlite3.connect(db_name)
         
         # Select key columns for the table
         table_df = merged_df[[
-            'wallet_', 'loyalty_type', 'persona', 'n_platforms', 
+            'wallet_', 'persona', 'cluster_id', 'loyalty_type', 'n_platforms', 
             'n_source_chains', 'n_dest_chains', 'total_amount_usd', 'total_tx_count',
-            'PC1', 'PC2', 'PC3', 'PC4', 'PC5'
+            'origin_chains', 'dest_chains', 'currency_sends', 'total_send_usd'
         ]].copy()
         
-        # Save to SQLite
-        table_df.to_sql(table_name, conn, if_exists='replace', index=False)
+        table_df.to_sql('loyalty_persona_final', conn, if_exists='replace', index=False)
         
         # Create indexes
-        conn.execute(f"CREATE INDEX idx_{table_name}_wallet ON {table_name}(wallet_);")
-        conn.execute(f"CREATE INDEX idx_{table_name}_loyalty ON {table_name}(loyalty_type);")
-        conn.execute(f"CREATE INDEX idx_{table_name}_persona ON {table_name}(persona);")
+        conn.execute("CREATE INDEX idx_loyalty_persona_wallet ON loyalty_persona_final(wallet_);")
+        conn.execute("CREATE INDEX idx_loyalty_persona_persona ON loyalty_persona_final(persona);")
+        conn.execute("CREATE INDEX idx_loyalty_persona_loyalty ON loyalty_persona_final(loyalty_type);")
         
-        print(f"✅ Table saved: {len(table_df):,} records")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error saving loyalty persona table: {e}")
-        return False
-    finally:
         conn.close()
-
-def export_analysis_files(merged_df):
-    """
-    Export analysis to CSV files.
-    """
-    
-    try:
-        print("📤 Exporting analysis files...")
         
-        # Main results
+        # Export CSV files
         merged_df.to_csv("loyalty_persona_analysis.csv", index=False)
         
         # Cross-tabulation summaries
@@ -340,82 +398,76 @@ def export_analysis_files(merged_df):
         loyalty_persona_crosstab.to_csv("loyalty_persona_crosstab.csv")
         
         # Persona characteristics
+        business_features = [
+            'origin_chains', 'dest_chains', 'currency_sends', 'call_count',
+            'distinct_routes', 'cross_chain_swaps', 'bridges', 'unique_days', 'total_send_usd'
+        ]
+        
         persona_summary = merged_df.groupby('persona').agg({
             'wallet_': 'count',
             'loyalty_type': lambda x: (x == 'multi-platform').mean() * 100,
             'total_amount_usd': ['mean', 'median'],
             'total_tx_count': ['mean', 'median'],
             'n_platforms': 'mean',
-            'PC1': 'mean',
-            'PC2': 'mean', 
-            'PC3': 'mean',
-            'PC4': 'mean',
-            'PC5': 'mean'
+            **{col: 'mean' for col in business_features}
         }).round(2)
         
-        persona_summary.columns = [
-            'wallet_count', 'multi_platform_pct', 'avg_volume', 'median_volume',
-            'avg_tx_count', 'median_tx_count', 'avg_platforms',
-            'avg_PC1', 'avg_PC2', 'avg_PC3', 'avg_PC4', 'avg_PC5'
-        ]
         persona_summary.to_csv("persona_characteristics.csv")
         
-        print(f"💾 Files exported:")
+        print(f"✅ Results saved:")
+        print(f"   - Database table: loyalty_persona_final")
         print(f"   - loyalty_persona_analysis.csv")
-        print(f"   - loyalty_persona_crosstab.csv")  
+        print(f"   - loyalty_persona_crosstab.csv")
         print(f"   - persona_characteristics.csv")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error exporting files: {e}")
+        print(f"❌ Error saving results: {e}")
         return False
 
 if __name__ == "__main__":
     print("🚀 Starting Loyalty + Persona Analysis...")
     print("=" * 60)
     
-    # Load PCA components
-    components_df = load_pca_components()
-    if components_df is None:
-        print("❌ Cannot proceed without PCA components")
+    # Step 1: Load wallet features
+    features_df = load_wallet_features_from_db()
+    if features_df is None:
+        print("❌ Cannot proceed without wallet features")
         exit(1)
     
-    # Get loyalty classification
+    # Step 2: PCA transformation for clean clustering space
+    pca_df, pca, scaler, clustering_features = perform_pca_transformation(features_df)
+    if pca_df is None:
+        print("❌ Cannot proceed without PCA transformation")
+        exit(1)
+    
+    # Step 3: K-means clustering for natural groupings
+    pca_df, kmeans, cluster_centroids = perform_kmeans_clustering(pca_df)
+    if pca_df is None:
+        print("❌ Cannot proceed without k-means clustering")
+        exit(1)
+    
+    # Step 4: Map clusters to business personas
+    persona_df, cluster_mapping = map_clusters_to_personas(features_df, pca_df)
+    if persona_df is None:
+        print("❌ Cannot proceed without persona mapping")
+        exit(1)
+    
+    # Step 5: Load loyalty classification
     loyalty_df = get_loyalty_classification()
     if loyalty_df is None:
         print("❌ Cannot proceed without loyalty data")
         exit(1)
     
-    # Get wallet features
-    features_df = get_wallet_features()
-    if features_df is None:
-        print("❌ Cannot proceed without wallet features")
-        exit(1)
-    
-    # Transform to PCA scores
-    pca_df = transform_to_pca_scores(features_df, components_df)
-    if pca_df is None:
-        print("❌ Cannot proceed without PCA transformation")
-        exit(1)
-    
-    # Assign personas
-    persona_df = assign_personas(pca_df)
-    if persona_df is None:
-        print("❌ Cannot proceed without persona assignment")
-        exit(1)
-    
-    # Combine loyalty + persona analysis
-    merged_df = create_loyalty_persona_analysis(loyalty_df, persona_df)
+    # Step 6: Combine loyalty + persona analysis
+    merged_df = create_loyalty_persona_analysis(persona_df, loyalty_df)
     if merged_df is None:
         print("❌ Cannot proceed without merged analysis")
         exit(1)
     
-    # Save to database
-    save_success = save_loyalty_persona_table(merged_df)
-    
-    # Export analysis files
-    export_success = export_analysis_files(merged_df)
+    # Step 7: Save results
+    save_success = save_results(merged_df)
     
     # Final summary
     print(f"\n🎯 FINAL SUMMARY")
@@ -425,13 +477,9 @@ if __name__ == "__main__":
     print(f"🎭 {merged_df['persona'].nunique()} distinct personas identified")
     print(f"🔄 {merged_df['loyalty_type'].nunique()} loyalty types analyzed")
     
-    if save_success:
-        print(f"💾 SQLite table created: loyalty_persona")
-    if export_success:
-        print(f"📤 CSV analysis files exported")
-    
-    print(f"\n💡 Key Insights:")
+    # Key insights
     multi_platform_pct = (merged_df['loyalty_type'] == 'multi-platform').mean() * 100
+    print(f"\n💡 Key Insights:")
     print(f"   📈 {multi_platform_pct:.1f}% of users are multi-platform")
     
     top_persona = merged_df['persona'].value_counts().index[0]
@@ -439,7 +487,7 @@ if __name__ == "__main__":
     print(f"   🎭 Most common persona: {top_persona} ({top_persona_pct:.1f}%)")
     
     print(f"\n🔍 Next steps:")
-    print(f"   1. Analyze persona loyalty patterns")
-    print(f"   2. Develop targeted retention strategies")
-    print(f"   3. Compare persona performance across platforms")
-    print(f"   4. Build persona-specific product features") 
+    print(f"   1. Review persona characteristics for business strategy")
+    print(f"   2. Analyze loyalty patterns for retention opportunities")
+    print(f"   3. Develop persona-specific product features")
+    print(f"   4. Build targeted marketing campaigns by persona")
