@@ -164,8 +164,8 @@ def calculate_cluster_centroids_and_stats(db_name="relay_analysis.db"):
                 'percentage': row['count'] / total_wallets * 100
             }
             
-            # Calculate sphere size using ceiling(10*log(# wallets))
-            stats['sphere_size'] = math.ceil(10 * math.log10(stats['count']) if stats['count'] > 0 else 1)
+            # Calculate sphere size using ceiling(0.05*sqrt(# wallets))
+            stats['sphere_size'] = math.ceil(0.05 * math.sqrt(stats['count']) if stats['count'] > 0 else 1)
             
             cluster_stats.append(stats)
         
@@ -234,8 +234,8 @@ def calculate_cluster_centroids_fallback():
             'percentage': data['percentage']
         }
         
-        # Calculate sphere size using ceiling(10*log(# wallets))
-        stats['sphere_size'] = math.ceil(10 * math.log10(stats['count']) if stats['count'] > 0 else 1)
+        # Calculate sphere size using ceiling(0.05*sqrt(# wallets))
+        stats['sphere_size'] = math.ceil(0.05 * math.sqrt(stats['count']) if stats['count'] > 0 else 1)
         
         cluster_stats.append(stats)
     
@@ -292,7 +292,7 @@ def create_3d_pca_visualization(centroid_df, output_file="pca_persona_viz.html")
         
         # Update layout
         fig.update_layout(
-            title="PCA Cluster Centroids by User Personas<br><sub>Sphere size = ceil(10×log(wallet count))</sub>",
+            title="PCA Cluster Centroids by User Personas<br><sub>Sphere size = ceil(0.05×sqrt(wallet count))</sub>",
             scene=dict(
                 xaxis_title="PC1 (Multi-chain/Complex Usage)",
                 yaxis_title="PC2 (High Value/Specific Usage)",
@@ -361,7 +361,7 @@ if __name__ == "__main__":
         print("=" * 60)
         print(f"✅ 3D PCA persona visualization created!")
         print(f"📊 Showing {len(centroid_df)} persona clusters")
-        print(f"🎨 Sphere sizes based on ceil(10×log(wallet count))")
+        print(f"🎨 Sphere sizes based on ceil(0.05×sqrt(wallet count))")
         print(f"🌈 Colors: Purple (Basic), Red (High Value), Blue (Multi-Chain)")
         print(f"💾 Data source: Database (or fallback if PCA scores not saved)")
         print(f"\n💡 Interpretation:")
