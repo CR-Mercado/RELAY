@@ -1,0 +1,634 @@
+---
+title: "Relay Report"
+author: "Charliemarketplace"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(reactable)
+library(dplyr)
+library(htmltools)
+library(xml2)
+library(plotly)
+library(dplyr)
+library(tidyr)
+
+```
+# Context
+
+Reviewing data from Jan 1, 2025 to June 30, 2025 for Relay, Across-v3, and DeBridge, filtered 
+to wallets that use Relay at least once in the time period. With the goal of understanding User-Segmentation and User-Loyalty.
+
+Addresses with >10K transactions were manually inspected for programmatic usage that could risk 
+distorting the analysis. This turned out to be quite useful, as LiFi-Diamond aggregator is a party with a formal relationship to Relay that had extremely high transaction counts and a unique set of underlying usage causes. 
+
+The following addresses were excluded from analysis:
+
+- LiFi Diamond contracts across multiple chains (1.9M transactions from top wallet)
+- Thaolunar.sol funded Solana addresses (200K+ transactions each) due to uncertain relationship w/ Relay.
+- Burn addresses (0x000...000 and 0x000...dead) (possibly data quirks or a special tx type; excluded due to rarity and uncertainty)
+
+(Across/DeBridge data sourced from Flipside Crypto)
+
+## Key Findings
+
+### User Segmentation 
+
+#### Methodology
+
+Using Principle Components Analysis on the aggregation of the following data for each wallet:
+
+- Count unique source chains
+- Count unique destination chains
+- Count unique tokens 
+- Log Count of `IS_CALL = TRUE` (i.e., # of requesting a function call, e.g., NFT mint on the destination)
+- Count of distinct routes (the Relay specific route, e.g., relay eth-eth or eth-usdc)
+- Log Count "Cross Chain Swap" Execution type
+- Log Count "Bridge" Execution type
+- Count Unique Days (date_trunc('day', created_at)) 
+- Log SUM(total_send_usd)
+
+LOG10() due to extreme differences in magnitudes across addresses.
+
+3 sets of components explained ~80% of the variance. Applying the coefficients for each component to the data enabled a dimension reduction in features that made clustering easier.
+
+Because I had already hypothesized potential clusters by looking at the distributions of the original data, I chose to use K-means clustering with k=3 alongside an interpretation of the PCA loadings to develop the personas.
+
+```{r, echo = FALSE}
+doc <- read_html("./pca_persona_viz.html")
+body_content <- xml_find_first(doc, "//body")
+HTML(as.character(xml_contents(body_content)))
+```
+
+#### Results 
+
+🟣 Basic Bridge Users:
+
+* Largest cohort by # unique wallets.
+* Simple behaviors: small number of chains, smaller sizing, short lifespans (1 or 2  day), rarely use function calls or cross-chain swap features.
+* Come to Relay for a specific route (e.g., exploring Abstract EVM), churn quickly.
+
+🔴 High Value Users:
+
+* Core user base, largest Volume Weighted Average tx size (Total Volume / (# Bridge+ # Swap)).
+* Operate in a narrow range of chains (typically the big 5: Base, Arb, Op, Solana, ETH).
+* Regular usage (~ 1/month) as they move value between chains.
+
+🔵 Multi-Chain Users: 
+
+* Likely programmatic or arbitrage focused wallets and power users.
+* Extreme users of cutting edge Function Call and Cross-Chain Swap capabilities. 
+* Widest interest in tokens, active multiple days per week (but technically smaller VWA sizing). 
+   
+```{r}
+# Read the persona characteristics CSV
+persona_data <- read.csv("relay_persona_characteristics.csv", row.names = 1)
+
+# Clean and format the data to match the target column names
+persona_reactable_data <- persona_data %>%
+  rename(
+    "Count" = "Count",
+    "%" = "X.",
+    "# Origins" = "X..Origins",
+    "# Destinations" = "X..Destinations", 
+    "# F() Calls" = "X..F...Calls",
+    "# Simple Bridge" = "X..Simple.Bridge",
+    "# Cross Chain Swaps" = "X..Cross.Chain.Swaps",
+    "# Tokens" = "X..Tokens",
+    "# Unique Days" = "X..Unique.Days",
+    "Total Volume" = "X6.mo.Volume"
+  ) %>%
+  mutate(
+    # Convert Total Volume to numeric for proper formatting
+    `Total Volume` = gsub("[$,]", "", `Total Volume`),
+    `Total Volume` = as.numeric(`Total Volume`)
+  )
+
+# Create the reactable
+create_persona_reactable <- function() {
+  reactable(
+    persona_reactable_data,
+    theme = reactableTheme(
+      headerStyle = list(
+        backgroundColor = "#3498db",
+        color = "white",
+        fontWeight = "bold",
+        fontSize = "12px",
+        textAlign = "center"
+      ),
+      cellStyle = list(
+        fontSize = "14px",
+        textAlign = "center",
+        padding = "8px 6px"
+      ),
+      borderColor = "#3498db",
+      borderWidth = "2px"
+    ),
+    columns = list(
+      "Count" = colDef(
+        format = colFormat(separators = TRUE),
+        style = list(textAlign = "center")
+      ),
+      "%" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Origins" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Destinations" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# F() Calls" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Simple Bridge" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Cross Chain Swaps" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Tokens" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Unique Days" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "Total Volume" = colDef(
+        format = colFormat(prefix = "$", separators = TRUE, digits = 0),
+        style = list(textAlign = "center")
+      )
+    ),
+    rowStyle = function(index) {
+      # Style the persona names (row names) with blue background like the image
+      list(
+        fontWeight = if (index %in% 1:3) "bold" else "normal"
+      )
+    },
+    defaultPageSize = 10,
+    showPagination = FALSE,
+    highlight = TRUE,
+    bordered = TRUE,
+    striped = FALSE,
+    compact = TRUE
+  )
+}
+
+# Create and display the reactable
+persona_table <- create_persona_reactable()
+
+# Add a title
+div(
+  h2("📊 Jan 1 - June 30 2025 Averages within Cluster", 
+     style = "color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px; font-size: 18px;"),
+  persona_table
+) 
+
+```
+
+### Patterns of First Bridging
+
+Ultimately, first-use patterns are limited. EVMs like Base (21.3%) and Arbitrum (17.8%) dominate first-usage on the source side. The biggest unique pull factor to Relay seems to be long-tail *destinations*:  Zora (4.4%), Abstract, Soneium, Eclipse. And Abstract has the unique property of nobody who has used Relay to access Abstract has also used a competitor (Across or DeBridge, discussed later) to also go to Abstract. But these long-tail chains have significantly smaller volumes.
+
+Average first transfer amounts vary by chain sophistication: Ethereum (\$464), Solana (\$238), vs. Zora (\$11).
+
+The most popular first routes are: 
+
+1. Base → Abstract (4.37%, avg $48.68)
+2. Solana → Base (3.80%, avg $132.89) 
+3. Zora → Base (3.24%, avg $7.32)
+
+```{r}
+
+# First Usage Route Pairs Reactable
+# Read the first usage route pairs CSV
+route_pairs_data <- read.csv("first_usage_route_pairs.csv")
+
+# Clean and format the route pairs data
+route_pairs_reactable_data <- route_pairs_data %>%
+  rename(
+    "Source Chain" = "first_source_chain",
+    "Destination Chain" = "first_dest_chain",
+    "Wallet Count" = "wallet_count",
+    "%" = "percentage",
+    "Avg Amount" = "avg_amount"
+  ) %>%
+  mutate(
+    # Format percentage and amount
+    `%` = round(`%`, 2),
+    `Avg Amount` = round(`Avg Amount`, 2)
+  )
+
+# Create the route pairs reactable
+create_route_pairs_reactable <- function() {
+  reactable(
+    route_pairs_reactable_data,
+    theme = reactableTheme(
+      headerStyle = list(
+        backgroundColor = "#3498db",
+        color = "white",
+        fontWeight = "bold",
+        fontSize = "12px",
+        textAlign = "center"
+      ),
+      cellStyle = list(
+        fontSize = "14px",
+        textAlign = "center",
+        padding = "8px 6px"
+      ),
+      borderColor = "#3498db",
+      borderWidth = "2px"
+    ),
+    columns = list(
+      "Source Chain" = colDef(
+        style = list(textAlign = "left", fontWeight = "bold")
+      ),
+      "Destination Chain" = colDef(
+        style = list(textAlign = "left", fontWeight = "bold")
+      ),
+      "Wallet Count" = colDef(
+        format = colFormat(separators = TRUE),
+        style = list(textAlign = "center")
+      ),
+      "%" = colDef(
+        format = colFormat(digits = 2),
+        style = list(textAlign = "center")
+      ),
+      "Avg Amount" = colDef(
+        format = colFormat(prefix = "$", separators = TRUE, digits = 2),
+        style = list(textAlign = "center")
+      )
+    ),
+    defaultPageSize = 15,
+    showPagination = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    striped = TRUE,
+    compact = TRUE
+  )
+}
+
+# First Usage Destination Chains Reactable
+# Read the first usage destination chains CSV
+dest_chains_data <- read.csv("first_usage_dest_chains.csv")
+
+# Clean and format the destination chains data
+dest_chains_reactable_data <- dest_chains_data %>%
+  rename(
+    "Destination Chain" = "first_dest_chain",
+    "Wallet Count" = "wallet_count",
+    "%" = "percentage",
+    "Avg Amount" = "avg_amount"
+  ) %>%
+  mutate(
+    # Format percentage and amount
+    `%` = round(`%`, 2),
+    `Avg Amount` = round(`Avg Amount`, 2)
+  )
+
+# Create the destination chains reactable
+create_dest_chains_reactable <- function() {
+  reactable(
+    dest_chains_reactable_data,
+    theme = reactableTheme(
+      headerStyle = list(
+        backgroundColor = "#3498db",
+        color = "white",
+        fontWeight = "bold",
+        fontSize = "12px",
+        textAlign = "center"
+      ),
+      cellStyle = list(
+        fontSize = "14px",
+        textAlign = "center",
+        padding = "8px 6px"
+      ),
+      borderColor = "#3498db",
+      borderWidth = "2px"
+    ),
+    columns = list(
+      "Destination Chain" = colDef(
+        style = list(textAlign = "left", fontWeight = "bold")
+      ),
+      "Wallet Count" = colDef(
+        format = colFormat(separators = TRUE),
+        style = list(textAlign = "center")
+      ),
+      "%" = colDef(
+        format = colFormat(digits = 2),
+        style = list(textAlign = "center")
+      ),
+      "Avg Amount" = colDef(
+        format = colFormat(prefix = "$", separators = TRUE, digits = 2),
+        style = list(textAlign = "center")
+      )
+    ),
+    defaultPageSize = 15,
+    showPagination = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    striped = TRUE,
+    compact = TRUE
+  )
+}
+
+# Create and display both reactables
+route_pairs_table <- create_route_pairs_reactable()
+dest_chains_table <- create_dest_chains_reactable()
+
+# Display with titles
+div(
+  h2("📊 First Usage Route Pairs", 
+     style = "color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px; font-size: 18px;"),
+  p("Top source → destination chain pairs for users' first Relay transaction", 
+    style = "color: #7f8c8d; font-style: italic; margin-bottom: 20px;"),
+  route_pairs_table,
+  
+  br(), br(),
+  
+  h2("📊 First Usage Destination Chains", 
+     style = "color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px; font-size: 18px;"),
+  p("Top destination chains for users' first Relay transaction", 
+    style = "color: #7f8c8d; font-style: italic; margin-bottom: 20px;"),
+  dest_chains_table
+)
+```
+
+## Loyalty & Retention 
+
+### Overall Loyalty 
+
+Focusing in on Relay, Across-v3, and DeBridge. There are two overwhelming things to note:
+
+1. The vast majority of addresses in crypto are simple, basic, low frequency, low volume.
+The Basic Bridge users persona. This means that not only is using a bridge rare (versus say a central exchange onboard path) using *multiple* bridge services is rare.
+
+If someone is using Relay, they likely only use Relay.
+
+* Relay-Only Users: 91.6% (3.23M wallets)
+* Multi-Platform Users: 8.4% (295K wallets)
+
+But, nonetheless significant differences apply in multi-platform usage across Personas. 
+
+Most importantly, the highest revenue per transaction users (High Value cohort, that is 
+less experimental with long-tail chains but moves in common chains in size) do seem to rate shop.
+
+
+```{r}
+# Read the loyalty persona crosstab CSV
+df <- read.csv("loyalty_persona_crosstab.csv", row.names = 1)
+
+# Remove the "All" row and prepare data
+df_clean <- df %>%
+  filter(row.names(.) != "All") %>%
+  select(-All)  # Remove "All" column if it exists
+
+# Convert to long format using base R approach
+df_clean$persona <- rownames(df_clean)
+df_long <- df_clean %>%
+  pivot_longer(cols = -persona, 
+               names_to = "loyalty_type", 
+               values_to = "count") %>%
+  mutate(
+    # Clean up loyalty type names
+    loyalty_type = case_when(
+      loyalty_type == "multi.platform" ~ "Multi-platform",
+      loyalty_type == "relay.only" ~ "Relay Only",
+      TRUE ~ loyalty_type
+    ),
+    # Calculate overall percentage
+    total_users = sum(count),
+    pct_overall = round(count / total_users * 100, 1),
+    # Create label text
+    label_text = paste0(format(count, big.mark = ","), "\n(", pct_overall, "%)")
+  )
+
+# Create the grouped bar chart
+p <- plot_ly(
+  df_long,
+  x = ~persona,
+  y = ~count,
+  color = ~loyalty_type,
+  type = "bar",
+  text = ~label_text,
+  textposition = "outside",
+  textfont = list(size = 12),
+  colors = c("Multi-platform" = "#e74c3c", "Relay Only" = "#3498db"),
+  hovertemplate = paste(
+    "<b>%{x}</b><br>",
+    "%{fullData.name}: %{y:,}<br>",
+    "Overall: %{text}<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    title = list(
+      text = "Rate-Shopping & Multi-Platform Behavior rare but important to study",
+      font = list(size = 16)
+    ),
+    xaxis = list(
+      title = "Persona",
+      tickangle = 0
+    ),
+    yaxis = list(
+      title = "Number of Users",
+      tickformat = ","
+    ),
+    legend = list(
+      title = list(text = "Platform Usage"),
+      orientation = "h",
+      x = 0.5,
+      xanchor = "center",
+      y = -0.15
+    ),
+    barmode = "group",
+    margin = list(b = 100),
+    font = list(family = "Arial", size = 12)
+  )
+
+# Display the plot
+p
+
+```
+
+### Marginal Differences among Multi-platform users within Persona Cluster 
+
+Composition effect concerns, along with uncertainty on complement vs substitution effects are detailed in later sections. 
+
+Ultimately, within cluster variation of multi-platform users are extremely clear.
+
+Multi-platform users which each cluster are *significantly more active and valuable* 
+in essentially every category except one.
+
+The use of IS_CALL on the destination chain. This key differentiation seems to imply that the feature is for more "in the know" parties that are biased to Relay. Both High Value and Multi-Chain clusters are less likely to use function calls features when they are not exclusive users of Relay.
+
+It could be the case that a competitor (DeBridge or Across) has a competing feature - or that the fundamentals of the persona (e.g., arbitrage bot across 30+ chains) would disincline it to use of the feature. 
+
+
+```{r}
+
+# Read the loyalty characteristics CSV
+loyalty_data <- read.csv("loyalty_characteristics.csv", row.names = 1)
+
+# Clean and format the data to match the target column names
+loyalty_reactable_data <- loyalty_data %>%
+  rename(
+    "Count" = "Count",
+    "%" = "X.",
+    "# Origins" = "X..Origins",
+    "# Destinations" = "X..Destinations", 
+    "# F() Calls" = "X..F...Calls",
+    "# Simple Bridge" = "X..Simple.Bridge",
+    "# Cross Chain Swaps" = "X..Cross.Chain.Swaps",
+    "# Tokens" = "X..Tokens",
+    "# Unique Days" = "X..Unique.Days",
+    "Avg Volume" = "Avg.Volume"
+  ) %>%
+  mutate(
+    # Convert Avg Volume to numeric for proper formatting
+    `Avg Volume` = gsub("[$,]", "", `Avg Volume`),
+    `Avg Volume` = as.numeric(`Avg Volume`),
+    # Create sorting order: persona first, then loyalty
+    persona_order = case_when(
+      grepl("Basic Bridge Users", rownames(.)) ~ 1,
+      grepl("High Value Users", rownames(.)) ~ 2,
+      grepl("Multi-Chain Users", rownames(.)) ~ 3
+    ),
+    loyalty_order = case_when(
+      grepl("relay-only", rownames(.)) ~ 1,
+      grepl("multi-platform", rownames(.)) ~ 2
+    )
+  ) %>%
+  arrange(persona_order, loyalty_order) %>%
+  select(-persona_order, -loyalty_order)
+
+# Create the reactable
+create_loyalty_reactable <- function() {
+  reactable(
+    loyalty_reactable_data,
+    theme = reactableTheme(
+      headerStyle = list(
+        backgroundColor = "#3498db",
+        color = "white",
+        fontWeight = "bold",
+        fontSize = "12px",
+        textAlign = "center"
+      ),
+      cellStyle = list(
+        fontSize = "14px",
+        textAlign = "center",
+        padding = "8px 6px"
+      ),
+      borderColor = "#3498db",
+      borderWidth = "2px"
+    ),
+    columns = list(
+      "Count" = colDef(
+        format = colFormat(separators = TRUE),
+        style = list(textAlign = "center")
+      ),
+      "%" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Origins" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Destinations" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# F() Calls" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Simple Bridge" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Cross Chain Swaps" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Tokens" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "# Unique Days" = colDef(
+        format = colFormat(digits = 1),
+        style = list(textAlign = "center")
+      ),
+      "Avg Volume" = colDef(
+        format = colFormat(prefix = "$", separators = TRUE, digits = 0),
+        style = list(textAlign = "center")
+      )
+    ),
+    rowStyle = function(index) {
+      # Highlight multi-platform rows for easier marginal comparison
+      row_name <- rownames(loyalty_reactable_data)[index]
+      if (grepl("multi-platform", row_name)) {
+        list(fontWeight = "bold", backgroundColor = "#f8f9fa")
+      } else {
+        list(fontWeight = "normal")
+      }
+    },
+    defaultPageSize = 10,
+    showPagination = FALSE,
+    highlight = TRUE,
+    bordered = TRUE,
+    striped = FALSE,
+    compact = TRUE
+  )
+}
+
+# Create and display the reactable
+loyalty_table <- create_loyalty_reactable()
+
+# Add a title
+div(
+  h2("📊 Persona × Loyalty Characteristics (Marginal Effects)", 
+     style = "color: #34495e; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px; font-size: 18px;"),
+  loyalty_table
+)
+
+```
+
+# Actionable Insights 
+
+Ultimately, the EVM <-> EVM environment is highly competitive. Long tail chains not served by major competitors do bring users desiring to bridge *onto* those environments but they are doing so in smaller sizes (Abstract, Zora). 
+
+I also looked at the multi-chain portfolio for the Relay Solver and noticed asset allocations seemed to match the demand well for where funds needed to be to service bridging requests. 
+
+While exploring the data, key contracts, transactions, etc. I did notice certain patterns not discussed here (e.g., approximate fee differences by IS_CALL vs not, etc.) - but I would be wary to blindly suggest actions beyond:
+
+1. Emphasize Cluster monitoring: The clusters are real signal into the different personas needing to be tracked and potentially treated differently. Rate differentiation may be key for Multi-chain users, and somewhat irrelevant for Basic Bridge users.
+
+2. Funnel & A/B Testing: Can Basic Bridge Users become High Value? A key difference between the clusters is usage of the cross chain swap feature; A/B testing marketing of this feature to this cohort is low risk (their volumes tend to be low per person) and high signal (there are a lot of these people). Similarly, IS_CALL transactions tend to have higher fees associated- getting these users to consider these new action types, given the sheer scale of them, would have an out-sized effect on revenue growth.
+
+
+# Next Steps 
+
+The analysis, while thorough, was still limited. Some key factors I consider unresolved include: 
+
+1. The complement vs substitution effects of multi-platform users. Multi-platform users have higher usage, volume, etc. than loyal users, but it is not clear what share of this difference is because experiencing multiple bridges keeps users doing more bridging overall (the pie grows) versus splits the opportunity space for Relay. 
+
+2. Further analysis on things like return routes (when users go to long-tail chains, if they don't find any PMF do they return via the same bridge?) and the types of IS_CALL / cross chain swap assets chosen on each bridge may also enable more A/B testing, e.g., fee differentiation when the action actually assists the Solver in portfolio balancing.
+
+3. More deeply investigate the IS_CALL feature, its competition, and why it is the only feature that does not correlate with growth when investigating multi-platform users vs loyal relay users. 
+
+
