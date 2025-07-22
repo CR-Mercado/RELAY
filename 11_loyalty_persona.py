@@ -398,12 +398,7 @@ def save_results(merged_df, db_name="relay_analysis.db"):
         print(f"💾 Saving {len(available_columns)} columns including {len(pca_columns)} PCA components")
         
         table_df.to_sql('loyalty_persona_final', conn, if_exists='replace', index=False)
-        
-        # Create indexes
-        conn.execute("CREATE INDEX idx_loyalty_persona_wallet ON loyalty_persona_final(wallet_);")
-        conn.execute("CREATE INDEX idx_loyalty_persona_persona ON loyalty_persona_final(persona);")
-        conn.execute("CREATE INDEX idx_loyalty_persona_loyalty ON loyalty_persona_final(loyalty_type);")
-        
+
         conn.close()
         
         # Export CSV files
